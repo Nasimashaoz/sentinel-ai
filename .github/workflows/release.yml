@@ -1,0 +1,70 @@
+name: Release — Tag & Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. v1.2.0)"
+        required: true
+        type: string
+      notes:
+        description: "Release notes (optional)"
+        required: false
+        type: string
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate semver
+        run: |
+          echo "${{ inputs.version }}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || \
+          (echo "❌ Invalid version format. Use vX.Y.Z" && exit 1)
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
+          git push origin ${{ inputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: "Sentinel AI ${{ inputs.version }}"
+          body: |
+            ## Sentinel AI ${{ inputs.version }}
+
+            ${{ inputs.notes }}
+
+            ### Install
+            ```bash
+            git clone https://github.com/Nasimashaoz/sentinel-ai
+            cd sentinel-ai && cp .env.example .env
+            # Edit .env with your API keys
+            docker run -d --env-file .env ghcr.io/nasimashaoz/sentinel-ai:${{ inputs.version }}
+            ```
+
+            ### Docker
+            ```
+            ghcr.io/nasimashaoz/sentinel-ai:${{ inputs.version }}
+            ghcr.io/nasimashaoz/sentinel-ai:latest
+            ```
+
+            ### Helm
+            ```bash
+            helm install sentinel-ai ./helm/sentinel-ai \
+              --set image.tag=${{ inputs.version }}
+            ```
+          draft: false
+          prerelease: false
+          generate_release_notes: true

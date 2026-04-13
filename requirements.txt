@@ -1,6 +1,35 @@
-anthropic>=0.40.0
+# Sentinel AI — Python dependencies
+# Install: pip install -r requirements.txt
+
+# Core async
 aiohttp>=3.9.0
+aiofiles>=23.2.0
+
+# AI engines
+anthropic>=0.34.0
+
+# Config
 python-dotenv>=1.0.0
-twilio>=8.0.0
-flask>=3.0.0
-rich>=13.0.0
+
+# System monitoring
+psutil>=5.9.0
+watchdog>=3.0.0
+
+# Metrics
+prometheus-client>=0.19.0
+
+# Alerts
+requests>=2.31.0
+
+# Cloud collectors (install only what you use)
+boto3>=1.34.0                        # AWS
+google-cloud-logging>=3.8.0          # GCP
+google-auth>=2.27.0                  # GCP auth
+azure-identity>=1.15.0               # Azure
+azure-mgmt-monitor>=6.0.0            # Azure activity logs
+kubernetes>=28.1.0                   # Kubernetes
+
+# Dev / test
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+ruff>=0.2.0

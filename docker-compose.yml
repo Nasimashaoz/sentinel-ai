@@ -1,36 +1,102 @@
-version: '3.8'
+version: "3.9"
 
 services:
+  # ─── Sentinel AI Agent ──────────────────────────────
   sentinel:
     build: .
+    image: ghcr.io/nasimashaoz/sentinel-ai:latest
     container_name: sentinel-ai
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "8080:8080"    # Dashboard
+      - "9090:9090"    # Prometheus metrics
     volumes:
-      - /var/log:/var/log:ro
-      - ./data:/app/data
-    network_mode: host
-    privileged: false
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - sentinel_data:/app/data
+      - /var/log:/host/var/log:ro           # Linux log access
+      - /etc:/host/etc:ro                   # Config file monitoring
+      - /proc:/host/proc:ro                 # Process monitoring
+    depends_on:
+      - prometheus
+      - grafana
+    networks:
+      - sentinel_net
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; os.path.exists('/app/sentinel.log')"]
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
 
-  dashboard:
-    build: .
-    container_name: sentinel-dashboard
+  # ─── Ollama (optional offline AI) ──────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sentinel-ollama
     restart: unless-stopped
-    env_file: .env
-    command: python dashboard/app.py
+    profiles: ["ollama"]      # only starts with: docker compose --profile ollama up
     ports:
-      - "8080:8080"
+      - "11434:11434"
     volumes:
-      - ./data:/app/data
+      - ollama_models:/root/.ollama
+    networks:
+      - sentinel_net
+
+  # ─── Signal CLI REST API (optional) ──────────────────
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: sentinel-signal
+    restart: unless-stopped
+    profiles: ["signal"]      # only starts with: docker compose --profile signal up
+    ports:
+      - "8085:8080"
+    volumes:
+      - signal_data:/home/.local/share/signal-cli
+    networks:
+      - sentinel_net
+
+  # ─── Prometheus ───────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sentinel-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - sentinel_net
+
+  # ─── Grafana ──────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sentinel-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=sentinel123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
     depends_on:
-      - sentinel
+      - prometheus
+    networks:
+      - sentinel_net
+
+volumes:
+  sentinel_data:
+  prometheus_data:
+  grafana_data:
+  ollama_models:
+  signal_data:
+
+networks:
+  sentinel_net:
+    driver: bridge

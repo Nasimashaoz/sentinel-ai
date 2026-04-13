@@ -1,0 +1,16 @@
+{{- if and .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sentinel-ai.fullname" . }}
+  labels:
+    {{- include "sentinel-ai.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sentinel-ai.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.prometheus.serviceMonitor.interval }}
+      path: /metrics
+{{- end }}

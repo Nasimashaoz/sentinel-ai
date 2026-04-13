@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sentinel-ai.fullname" . }}
+  labels:
+    {{- include "sentinel-ai.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.dashboard.type }}
+  ports:
+    - name: dashboard
+      port: {{ .Values.service.dashboard.port }}
+      targetPort: dashboard
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.service.prometheus.port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "sentinel-ai.selectorLabels" . | nindent 4 }}

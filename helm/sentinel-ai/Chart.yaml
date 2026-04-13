@@ -1,0 +1,21 @@
+apiVersion: v2
+name: sentinel-ai
+description: |
+  Sentinel AI — 24/7 self-hosted AI security agent.
+  Monitors Kubernetes clusters, Linux servers, AWS, GCP, and Azure.
+  Sends alerts to Telegram, Slack, Discord, WhatsApp, PagerDuty.
+type: application
+version: 1.1.0
+appVersion: "1.1.0"
+keywords:
+  - security
+  - monitoring
+  - ai
+  - siem
+  - kubernetes
+home: https://github.com/Nasimashaoz/sentinel-ai
+sources:
+  - https://github.com/Nasimashaoz/sentinel-ai
+maintainers:
+  - name: Nasima Shaoz
+    url: https://github.com/Nasimashaoz

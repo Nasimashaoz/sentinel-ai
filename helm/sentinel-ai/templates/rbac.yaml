@@ -1,0 +1,38 @@
+{{- if .Values.rbac.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "sentinel-ai.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sentinel-ai.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sentinel-ai.fullname" . }}-reader
+  labels:
+    {{- include "sentinel-ai.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "events", "namespaces", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sentinel-ai.fullname" . }}-reader-binding
+  labels:
+    {{- include "sentinel-ai.labels" . | nindent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "sentinel-ai.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "sentinel-ai.fullname" . }}-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

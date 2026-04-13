@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sentinel-ai.fullname" . }}
+  labels:
+    {{- include "sentinel-ai.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sentinel-ai.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sentinel-ai.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "sentinel-ai.serviceAccountName" . }}
+      containers:
+        - name: sentinel-ai
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: dashboard
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.prometheus.port }}
+              protocol: TCP
+          env:
+            # AI
+            {{- if .Values.ai.claude.enabled }}
+            - name: CLAUDE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sentinel-ai.fullname" . }}-secrets
+                  key: claude-api-key
+                  optional: true
+            {{- end }}
+            {{- if .Values.ai.ollama.enabled }}
+            - name: OLLAMA_ENABLED
+              value: "true"
+            - name: OLLAMA_BASE_URL
+              value: {{ .Values.ai.ollama.baseUrl | quote }}
+            - name: OLLAMA_MODEL
+              value: {{ .Values.ai.ollama.model | quote }}
+            {{- end }}
+            # Kubernetes
+            - name: K8S_ENABLED
+              value: {{ .Values.kubernetes.enabled | quote }}
+            - name: K8S_NAMESPACE
+              value: {{ .Values.kubernetes.namespace | quote }}
+            # Prometheus
+            - name: PROMETHEUS_PORT
+              value: {{ .Values.prometheus.port | quote }}
+            # Alerts
+            {{- if .Values.alerts.telegram.enabled }}
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sentinel-ai.fullname" . }}-secrets
+                  key: telegram-bot-token
+                  optional: true
+            - name: TELEGRAM_CHAT_ID
+              value: {{ .Values.alerts.telegram.chatId | quote }}
+            {{- end }}
+            {{- if .Values.alerts.slack.enabled }}
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sentinel-ai.fullname" . }}-secrets
+                  key: slack-webhook-url
+                  optional: true
+            {{- end }}
+            {{- if .Values.alerts.pagerduty.enabled }}
+            - name: PAGERDUTY_ROUTING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sentinel-ai.fullname" . }}-secrets
+                  key: pagerduty-routing-key
+                  optional: true
+            {{- end }}
+            # Remediation
+            - name: AUTO_REMEDIATE
+              value: {{ .Values.remediation.enabled | quote }}
+            - name: AUTO_REMEDIATE_CRITICAL
+              value: {{ .Values.remediation.criticalEnabled | quote }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "sentinel-ai.fullname" . }}-data
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

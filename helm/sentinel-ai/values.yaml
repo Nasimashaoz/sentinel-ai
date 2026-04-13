@@ -1,0 +1,114 @@
+# Sentinel AI — Helm Chart Default Values
+# Override any value with: helm install sentinel-ai ./helm/sentinel-ai --set key=value
+# Or: helm install sentinel-ai ./helm/sentinel-ai -f my-values.yaml
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/nasimashaoz/sentinel-ai
+  pullPolicy: IfNotPresent
+  tag: "v1.1.0"
+
+serviceAccount:
+  create: true
+  name: sentinel-ai
+  annotations: {}
+
+# RBAC — read-only ClusterRole for pod/event watching
+rbac:
+  create: true
+
+service:
+  dashboard:
+    port: 8080
+    type: ClusterIP
+  prometheus:
+    port: 9090
+    type: ClusterIP
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: sentinel.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /app/data
+
+# Kubernetes monitoring
+kubernetes:
+  enabled: true
+  namespace: ""   # empty = all namespaces
+
+# Prometheus metrics
+prometheus:
+  enabled: true
+  port: 9090
+  serviceMonitor:
+    enabled: false  # set true if using Prometheus Operator
+    interval: 30s
+
+# Alert channels — set via --set or a secret (see docs)
+alerts:
+  telegram:
+    enabled: false
+    botToken: ""
+    chatId: ""
+  slack:
+    enabled: false
+    webhookUrl: ""
+  discord:
+    enabled: false
+    webhookUrl: ""
+  pagerduty:
+    enabled: false
+    routingKey: ""
+
+# AI engine
+ai:
+  claude:
+    enabled: true
+    apiKey: ""
+    model: claude-3-5-sonnet-20241022
+  ollama:
+    enabled: false
+    baseUrl: "http://ollama:11434"
+    model: llama3
+
+# Cloud collectors
+collectors:
+  aws:
+    enabled: false
+    region: us-east-1
+  gcp:
+    enabled: false
+    projectId: ""
+  azure:
+    enabled: false
+    subscriptionId: ""
+
+# Auto-remediation
+remediation:
+  enabled: false
+  criticalEnabled: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

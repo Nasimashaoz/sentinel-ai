@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  sentinel:
+    build: .
+    container_name: sentinel-ai
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - /var/log:/var/log:ro
+      - ./data:/app/data
+    network_mode: host
+    privileged: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.path.exists('/app/sentinel.log')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dashboard:
+    build: .
+    container_name: sentinel-dashboard
+    restart: unless-stopped
+    env_file: .env
+    command: python dashboard/app.py
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - sentinel

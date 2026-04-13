@@ -1,0 +1,1 @@
+"""Sentinel AI — Web dashboard"""

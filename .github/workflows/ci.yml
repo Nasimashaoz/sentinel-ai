@@ -11,12 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Syntax check
-        run: python -m py_compile sentinel.py core/*.py alerts/*.py
-      - name: Import check
-        run: python -c "from core.scorer import RiskScorer; from core.compliance import ComplianceEngine; print('OK')"
+
+      - name: Syntax check (all modules)
+        run: |
+          python -m py_compile sentinel.py
+          python -m py_compile core/agent.py core/collector.py core/analyzer.py core/scorer.py core/compliance.py
+          python -m py_compile alerts/telegram_alert.py alerts/slack_alert.py alerts/whatsapp_alert.py alerts/email_alert.py
+          python -m py_compile dashboard/app.py
+          python -m py_compile reports/generator.py
+
+      - name: Run unit tests
+        run: |
+          python tests/test_scorer.py
+          python tests/test_compliance.py
+          python tests/test_report.py
+
+      - name: Import smoke test
+        run: python -c "from core.scorer import RiskScorer; from core.compliance import ComplianceEngine; from reports.generator import ReportGenerator; print('All imports OK')"

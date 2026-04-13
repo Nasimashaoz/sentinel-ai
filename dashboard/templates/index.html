@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🛡️ Sentinel AI — Security Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --critical: #f85149;
+    --high: #f0883e;
+    --medium: #d29922;
+    --low: #3fb950;
+    --primary: #58a6ff;
+    --font: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+  a { color: var(--primary); text-decoration: none; }
+
+  /* Layout */
+  .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 12px; height: 56px; position: sticky; top: 0; z-index: 100; }
+  .topbar-logo { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
+  .live-badge { background: #3fb95022; color: var(--low); border: 1px solid #3fb95040; border-radius: 20px; padding: 2px 10px; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--low); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .spacer { flex: 1; }
+  .topbar-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+  .main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+  /* Stat cards */
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .stat-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .stat-value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .stat-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .stat-card.critical .stat-value { color: var(--critical); }
+  .stat-card.high .stat-value { color: var(--high); }
+  .stat-card.medium .stat-value { color: var(--medium); }
+  .stat-card.low .stat-value { color: var(--low); }
+  .stat-card.total .stat-value { color: var(--primary); }
+
+  /* Two-column layout */
+  .two-col { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Table */
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .panel-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .panel-title { font-weight: 600; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 10px 16px; text-align: left; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* Risk badges */
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .badge.CRITICAL { background: #f8514922; color: var(--critical); border: 1px solid #f8514940; }
+  .badge.HIGH { background: #f0883e22; color: var(--high); border: 1px solid #f0883e40; }
+  .badge.MEDIUM { background: #d2992222; color: var(--medium); border: 1px solid #d2992240; }
+  .badge.LOW { background: #3fb95022; color: var(--low); border: 1px solid #3fb95040; }
+
+  /* IP list */
+  .ip-list { padding: 8px 0; }
+  .ip-row { display: flex; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--border); }
+  .ip-row:last-child { border-bottom: none; }
+  .ip-addr { font-family: monospace; font-size: 13px; flex: 1; }
+  .ip-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ip-bar-wrap { width: 60px; height: 4px; background: var(--border); border-radius: 2px; }
+  .ip-bar { height: 4px; background: var(--critical); border-radius: 2px; }
+
+  /* Live feed */
+  #live-feed { list-style: none; padding: 12px 0; }
+  #live-feed li { padding: 10px 20px; border-bottom: 1px solid var(--border); font-size: 13px; display: flex; align-items: flex-start; gap: 10px; animation: slide-in 0.3s ease; }
+  @keyframes slide-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+  #live-feed li:last-child { border-bottom: none; }
+  .feed-time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; padding-top: 2px; }
+  .feed-body { flex: 1; }
+  .feed-type { font-weight: 600; }
+  .feed-ip { font-family: monospace; color: var(--muted); font-size: 12px; }
+
+  .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+  .empty-icon { font-size: 32px; margin-bottom: 8px; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-logo">🛡️ Sentinel AI</div>
+  <div class="live-badge"><span class="live-dot"></span> LIVE</div>
+  <div class="spacer"></div>
+  <div class="topbar-time" id="clock"></div>
+</nav>
+
+<div class="main">
+
+  <!-- Stats row -->
+  <div class="grid-stats">
+    <div class="stat-card total">
+      <div class="stat-label">Total Incidents</div>
+      <div class="stat-value" id="stat-total">{{ stats.total }}</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card critical">
+      <div class="stat-label">Critical</div>
+      <div class="stat-value" id="stat-critical">{{ stats.critical }}</div>
+      <div class="stat-sub">immediate action</div>
+    </div>
+    <div class="stat-card high">
+      <div class="stat-label">High</div>
+      <div class="stat-value" id="stat-high">{{ stats.high }}</div>
+      <div class="stat-sub">investigate soon</div>
+    </div>
+    <div class="stat-card medium">
+      <div class="stat-label">Medium</div>
+      <div class="stat-value" id="stat-medium">{{ stats.medium }}</div>
+      <div class="stat-sub">monitor</div>
+    </div>
+    <div class="stat-card low">
+      <div class="stat-label">Low</div>
+      <div class="stat-value" id="stat-low">{{ stats.low }}</div>
+      <div class="stat-sub">informational</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+
+    <!-- Incident table -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">📋 Incident Feed</span>
+        <span style="color:var(--muted);font-size:12px">Auto-updates every 10s</span>
+      </div>
+      {% if incidents %}
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Risk</th>
+            <th>Type</th>
+            <th>Source IP</th>
+            <th>Service</th>
+          </tr>
+        </thead>
+        <tbody id="incident-tbody">
+          {% for i in incidents %}
+          <tr>
+            <td style="font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px">{{ i.timestamp[:19] if i.timestamp else 'N/A' }}</td>
+            <td><span class="badge {{ i.risk }}">{{ i.risk }}</span></td>
+            <td style="font-weight:500">{{ i.type.replace('_',' ') if i.type else 'N/A' }}</td>
+            <td style="font-family:monospace">{{ i.source_ip or 'unknown' }}</td>
+            <td style="color:var(--muted)">{{ i.service or 'N/A' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">
+        <div class="empty-icon">🟢</div>
+        <div style="font-weight:600;margin-bottom:4px">No incidents yet</div>
+        <div style="font-size:12px">Sentinel AI is watching. Stay secure.</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Right sidebar -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+
+      <!-- Live SSE feed -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">⚡ Live Alerts</span>
+          <span class="live-badge" style="font-size:11px"><span class="live-dot"></span> Streaming</span>
+        </div>
+        <ul id="live-feed">
+          <li><div class="empty-icon" style="font-size:20px">🛡️</div><div class="feed-body" style="color:var(--muted)">Waiting for threats...</div></li>
+        </ul>
+      </div>
+
+      <!-- Top attacker IPs -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">🎯 Top Attacker IPs</span>
+        </div>
+        <div class="ip-list" id="ip-list">
+          <div class="empty" style="padding:24px">
+            <div style="font-size:12px;color:var(--muted)">No data yet</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// Clock
+function tick() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toUTCString().replace(' GMT', ' UTC');
+}
+tick(); setInterval(tick, 1000);
+
+// SSE live feed
+const feed = document.getElementById('live-feed');
+const evtSource = new EventSource('/stream');
+evtSource.onmessage = function(e) {
+  const items = JSON.parse(e.data);
+  if (!items.length) return;
+  feed.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    const riskColors = {CRITICAL:'#f85149',HIGH:'#f0883e',MEDIUM:'#d29922',LOW:'#3fb950'};
+    const color = riskColors[item.risk] || '#7d8590';
+    li.innerHTML = `
+      <div class="feed-time">${(item.timestamp||'').slice(11,19)}</div>
+      <div class="feed-body">
+        <div class="feed-type" style="color:${color}">${(item.risk||'')} — ${(item.type||'').replace(/_/g,' ')}</div>
+        <div class="feed-ip">${item.source_ip||'unknown'}</div>
+      </div>`;
+    feed.prepend(li);
+  });
+};
+
+// Poll stats + top IPs every 30s
+async function refreshStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('stat-total').textContent = d.total_all_time;
+    document.getElementById('stat-critical').textContent = d.by_risk.CRITICAL || 0;
+    document.getElementById('stat-high').textContent = d.by_risk.HIGH || 0;
+    document.getElementById('stat-medium').textContent = d.by_risk.MEDIUM || 0;
+    document.getElementById('stat-low').textContent = d.by_risk.LOW || 0;
+
+    // Top IPs
+    const ips = d.top_ips;
+    const ipList = document.getElementById('ip-list');
+    if (Object.keys(ips).length === 0) return;
+    const maxCount = Math.max(...Object.values(ips));
+    ipList.innerHTML = Object.entries(ips).map(([ip, count]) => `
+      <div class="ip-row">
+        <div class="ip-addr">${ip}</div>
+        <div class="ip-bar-wrap"><div class="ip-bar" style="width:${Math.round(count/maxCount*100)}%"></div></div>
+        <div class="ip-count">${count}</div>
+      </div>`).join('');
+  } catch(e) {}
+}
+refreshStats(); setInterval(refreshStats, 30000);
+</script>
+
+</body>
+</html>

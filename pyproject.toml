@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "sentinel-ai"
+version = "1.0.0"
+description = "Your 24/7 self-hosted AI security agent — monitors infrastructure, detects threats, alerts on WhatsApp/Telegram/Slack"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Nasima Shaoz", email = "github.com/Nasimashaoz" }]
+keywords = ["security", "ai", "monitoring", "threat-detection", "self-hosted", "devops", "siem"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Monitoring",
+    "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40.0",
+    "aiohttp>=3.9.0",
+    "python-dotenv>=1.0.0",
+    "flask>=3.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+whatsapp = ["twilio>=8.0.0"]
+all = ["twilio>=8.0.0"]
+
+[project.scripts]
+sentinel = "sentinel:main"
+
+[project.urls]
+Homepage = "https://github.com/Nasimashaoz/sentinel-ai"
+Repository = "https://github.com/Nasimashaoz/sentinel-ai"
+Issues = "https://github.com/Nasimashaoz/sentinel-ai/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "alerts*", "dashboard*", "reports*"]

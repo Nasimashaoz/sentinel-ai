@@ -98,17 +98,25 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
+        event_name = ct_event.get("EventName") or ct_event.get("eventName", "")
+        source_ip = ct_event.get("SourceIPAddress") or ct_event.get("sourceIPAddress", "unknown")
+        event_time = ct_event.get("EventTime") or ct_event.get("eventTime", datetime.now(timezone.utc))
+
         resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
         resource_str = ", ".join(resources) if resources else "N/A"
+
+        user_identity = ct_event.get("userIdentity") or ct_event.get("UserIdentity", {})
+
+        username = ct_event.get("Username") or user_identity.get("userName", "unknown")
+        user_type = user_identity.get("type") or user_identity.get("Type", "")
+
+        if user_type == "Root":
+            username = "root"
 
         # Root account usage — always CRITICAL
         if username == "root":
             return {
-                "type": "AWS_ROOT_USAGE",
+                "type": "AWS_ROOT_LOGIN",
                 "source_ip": source_ip,
                 "service": f"AWS:{event_name}",
                 "aws_event": event_name,
@@ -122,7 +130,7 @@ class AWSCollector:
         # CloudTrail disabled — attack covering tracks
         if event_name in ("StopLogging", "DeleteTrail"):
             return {
-                "type": "AWS_LOGGING_DISABLED",
+                "type": "AWS_CLOUDTRAIL_DISABLED",
                 "source_ip": source_ip,
                 "service": f"AWS:CloudTrail",
                 "aws_event": event_name,

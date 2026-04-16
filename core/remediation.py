@@ -72,11 +72,27 @@ REMEDIATION_PLAYBOOK = {
 
 class RemediationEngine:
     def __init__(self):
+        self.enabled = AUTO_REMEDIATE
         self.dry_run = not AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Check if a command strictly matches a whitelisted template marked as safe_for_auto."""
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if not playbook.get("safe_for_auto"):
+                continue
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Simple heuristic: exact match up to the first space before any parameter
+            prefix = template.split(" {")[0]
+            if cmd.startswith(prefix):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""

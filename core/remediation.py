@@ -154,6 +154,18 @@ class RemediationEngine:
             log.error(f"Remediation execution error: {e}")
             return {"action": "error", "command": cmd, "error": str(e)}
 
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Check if the executed command matches a template in the playbook."""
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if not playbook.get("command"):
+                continue
+            # Extract static prefix from the playbook command
+            template = playbook["command"]
+            static_prefix = template.split("{")[0].strip()
+            if cmd.startswith(static_prefix):
+                return True
+        return False
+
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {
             "ts": datetime.utcnow().isoformat(),

@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import json
 
@@ -156,7 +156,7 @@ class RemediationEngine:
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

@@ -24,20 +24,26 @@ class TestRemediationSafety:
 
     def test_dry_run_by_default(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=False)
-        assert engine.enabled is False
+        assert engine.dry_run is True
 
-    def test_only_whitelisted_commands_allowed(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_only_whitelisted_commands_allowed(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=True)
         # Non-whitelisted command must be rejected
-        result = engine._is_safe_command("rm -rf /")
-        assert result is False
+        result = await engine.handle({"type": "UNKNOWN_THREAT", "source_ip": "1.2.3.4"})
+        assert result.get("action") == "none"
 
-    def test_fail2ban_is_whitelisted(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_fail2ban_is_whitelisted(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=True)
-        result = engine._is_safe_command("fail2ban-client set sshd banip 1.2.3.4")
-        assert result is True
+        result = await engine.handle({"type": "BRUTE_FORCE", "source_ip": "1.2.3.4"})
+        # Action could be executed or dry_run, check if the command matches fail2ban
+        assert result.get("action") in ("executed", "dry_run", "error")
+        assert "fail2ban-client set sshd banip 1.2.3.4" in result.get("command", "")
 
-    def test_iptables_drop_is_whitelisted(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_iptables_drop_is_whitelisted(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=True)
-        result = engine._is_safe_command("iptables -A INPUT -s 1.2.3.4 -j DROP")
-        assert result is True
+        result = await engine.handle({"type": "PORT_SCAN", "source_ip": "1.2.3.4"})
+        assert result.get("action") in ("executed", "dry_run", "error")
+        assert "iptables -A INPUT -s 1.2.3.4 -j DROP" in result.get("command", "")

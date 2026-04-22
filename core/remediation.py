@@ -78,6 +78,21 @@ class RemediationEngine:
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
 
+    @property
+    def enabled(self) -> bool:
+        return not self.dry_run
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Check if command starts with a whitelisted prefix."""
+        safe_prefixes = [
+            "fail2ban-client ",
+            "iptables -A INPUT ",
+            "iptables -D INPUT ",
+            "kubectl delete pod ",
+            "kill -9 "
+        ]
+        return any(cmd.startswith(prefix) for prefix in safe_prefixes)
+
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
         t_type = threat.get("type", "")

@@ -18,16 +18,22 @@ def test_empty_report_html():
         assert "No incidents" in html
 
 
+from datetime import datetime, timezone
+
 def test_save_incident_and_report():
     with tempfile.TemporaryDirectory() as tmpdir:
         gen = ReportGenerator(data_dir=tmpdir)
+
+        # Use a current timestamp to ensure it's within the 7-day window
+        current_time = datetime.now(timezone.utc).isoformat()
+
         gen.save_incident({
             "risk": "HIGH",
             "type": "BRUTE_FORCE",
             "source_ip": "1.2.3.4",
             "service": "SSH",
             "count": 50,
-            "timestamp": "2026-04-13T10:00:00",
+            "timestamp": current_time,
             "ai_analysis": "Brute force from known scanner.",
             "remediation": "iptables -A INPUT -s 1.2.3.4 -j DROP",
         })

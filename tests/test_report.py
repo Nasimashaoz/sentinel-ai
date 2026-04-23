@@ -21,13 +21,15 @@ def test_empty_report_html():
 def test_save_incident_and_report():
     with tempfile.TemporaryDirectory() as tmpdir:
         gen = ReportGenerator(data_dir=tmpdir)
+        from datetime import datetime, timedelta, timezone
+        future_date = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
         gen.save_incident({
             "risk": "HIGH",
             "type": "BRUTE_FORCE",
             "source_ip": "1.2.3.4",
             "service": "SSH",
             "count": 50,
-            "timestamp": "2026-04-13T10:00:00",
+            "timestamp": future_date,
             "ai_analysis": "Brute force from known scanner.",
             "remediation": "iptables -A INPUT -s 1.2.3.4 -j DROP",
         })

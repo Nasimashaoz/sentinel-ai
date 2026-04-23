@@ -18,26 +18,44 @@ class TestRemediationSafety:
             "AUTO_REMEDIATE_CRITICAL": str(critical).lower(),
         }
         with patch.dict(os.environ, env):
+            import core.remediation
+            from importlib import reload
+            reload(core.remediation)
             with patch("core.remediation.AUDIT_LOG", Path(tmp_dir) / "audit.jsonl"):
                 from core.remediation import RemediationEngine
                 return RemediationEngine()
 
     def test_dry_run_by_default(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=False)
-        assert engine.enabled is False
+        assert engine.dry_run is True
 
-    def test_only_whitelisted_commands_allowed(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_only_whitelisted_commands_allowed(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=True)
-        # Non-whitelisted command must be rejected
-        result = engine._is_safe_command("rm -rf /")
-        assert result is False
+        # Non-whitelisted threat type must be rejected
+        threat = {"type": "FAKE_THREAT", "source_ip": "1.2.3.4"}
+        result = await engine.handle(threat)
+        assert result["action"] == "none"
 
-    def test_fail2ban_is_whitelisted(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_fail2ban_is_whitelisted(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=True)
-        result = engine._is_safe_command("fail2ban-client set sshd banip 1.2.3.4")
-        assert result is True
+        # We need to mock _execute to prevent actually running the command
+        with patch.object(engine, "_execute") as mock_exec:
+            mock_exec.return_value = {"action": "executed", "success": True}
+            threat = {"type": "BRUTE_FORCE", "source_ip": "1.2.3.4", "risk": "HIGH"}
+            result = await engine.handle(threat)
+            mock_exec.assert_called_once()
+            cmd, _, _ = mock_exec.call_args[0]
+            assert "fail2ban-client set sshd banip 1.2.3.4" in cmd
 
-    def test_iptables_drop_is_whitelisted(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_iptables_drop_is_whitelisted(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=True)
-        result = engine._is_safe_command("iptables -A INPUT -s 1.2.3.4 -j DROP")
-        assert result is True
+        with patch.object(engine, "_execute") as mock_exec:
+            mock_exec.return_value = {"action": "executed", "success": True}
+            threat = {"type": "PORT_SCAN", "source_ip": "1.2.3.4", "risk": "HIGH"}
+            result = await engine.handle(threat)
+            mock_exec.assert_called_once()
+            cmd, _, _ = mock_exec.call_args[0]
+            assert "iptables -A INPUT -s 1.2.3.4 -j DROP" in cmd

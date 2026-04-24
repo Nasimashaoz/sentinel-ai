@@ -9,7 +9,7 @@ Requires: PAGERDUTY_ROUTING_KEY (Events API v2 integration key)
 import logging
 import os
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 import aiohttp
 
 log = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class PagerDutyAlerter:
                 "summary": f"{risk}: {t_type} from {threat.get('source_ip', 'unknown')}",
                 "severity": severity,
                 "source": threat.get("service", "sentinel-ai"),
-                "timestamp": threat.get("timestamp", datetime.utcnow().isoformat()),
+                "timestamp": threat.get("timestamp", datetime.now(timezone.utc).isoformat()),
                 "custom_details": {
                     "risk": risk,
                     "source_ip": threat.get("source_ip"),

@@ -98,14 +98,39 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
+        event_name = ct_event.get("eventName", ct_event.get("EventName", ""))
+
+        user_identity = ct_event.get("userIdentity", {})
+        username = ct_event.get("Username")
+        if not username:
+            if user_identity.get("type") == "Root":
+                username = "root"
+            else:
+                arn = user_identity.get("arn", "")
+                if "/" in arn:
+                    username = arn.split("/")[-1]
+                else:
+                    username = "unknown"
+
+        source_ip = ct_event.get("sourceIPAddress", ct_event.get("SourceIPAddress", "unknown"))
+        event_time = ct_event.get("eventTime", ct_event.get("EventTime", datetime.now(timezone.utc)))
         resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
         resource_str = ", ".join(resources) if resources else "N/A"
 
         # Root account usage — always CRITICAL
+        if username == "root" and event_name == "ConsoleLogin":
+            return {
+                "type": "AWS_ROOT_LOGIN",
+                "source_ip": source_ip,
+                "service": f"AWS:{event_name}",
+                "aws_event": event_name,
+                "aws_user": username,
+                "aws_resource": resource_str,
+                "risk": "CRITICAL",
+                "raw": f"Root account used: {event_name} from {source_ip}",
+                "timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+            }
+
         if username == "root":
             return {
                 "type": "AWS_ROOT_USAGE",
@@ -122,7 +147,7 @@ class AWSCollector:
         # CloudTrail disabled — attack covering tracks
         if event_name in ("StopLogging", "DeleteTrail"):
             return {
-                "type": "AWS_LOGGING_DISABLED",
+                "type": "AWS_CLOUDTRAIL_DISABLED",
                 "source_ip": source_ip,
                 "service": f"AWS:CloudTrail",
                 "aws_event": event_name,

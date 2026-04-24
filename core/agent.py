@@ -5,7 +5,7 @@ Orchestrates collection, analysis, and alerting.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from core.collector import LogCollector
@@ -49,7 +49,11 @@ class SentinelAgent:
             await asyncio.sleep(300)
 
     async def _monitor_loop(self):
-        """Core monitoring loop: collect → analyze → score → alert."""
+        """Core monitoring loop: collect → analyze → score → remediate → alert."""
+        # Initialize RemediationEngine to make use of _is_safe_command
+        from core.remediation import RemediationEngine
+        remediation_engine = RemediationEngine()
+
         while self.running:
             try:
                 events = await self.collector.collect()
@@ -57,7 +61,17 @@ class SentinelAgent:
                     threat = await self.analyzer.analyze(event)
                     if threat:
                         threat["score"] = self.scorer.score(threat)
-                        threat["timestamp"] = datetime.utcnow().isoformat()
+                        threat["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+                        # Auto-remediation hook
+                        if remediation_engine.enabled:
+                            remedy_result = await remediation_engine.handle(threat)
+                            threat["remediation"] = remedy_result
+                            if remedy_result.get("action") == "skipped":
+                                # Example use-case: blocklist check or fallback if command isn't in playbook templates
+                                if "command" in remedy_result and not remediation_engine._is_safe_command(remedy_result["command"]):
+                                    log.warning(f"Prevented execution of non-whitelisted command: {remedy_result['command']}")
+
                         self.incidents.append(threat)
 
                         if self._should_alert(threat):

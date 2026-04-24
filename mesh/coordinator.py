@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from aiohttp import web
 
 log = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ async def get_nodes(request: web.Request) -> web.Response:
 async def get_summary(request: web.Request) -> web.Response:
     if not _auth(request):
         return web.Response(status=401, text="Unauthorized")
-    cutoff = datetime.utcnow() - timedelta(hours=24)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     recent = [t for t in _threats if _after(t.get("timestamp", ""), cutoff)]
     by_server = defaultdict(int)
     by_type = defaultdict(int)
@@ -103,7 +103,10 @@ async def get_summary(request: web.Request) -> web.Response:
 
 def _after(ts_str: str, cutoff: datetime) -> bool:
     try:
-        return datetime.fromisoformat(ts_str) >= cutoff
+        dt = datetime.fromisoformat(ts_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt >= cutoff
     except Exception:
         return False
 

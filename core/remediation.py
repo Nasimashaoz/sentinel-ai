@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import json
 
@@ -77,6 +77,31 @@ class RemediationEngine:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    @property
+    def enabled(self):
+        return not self.dry_run
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Check if a concrete command string matches one of our whitelisted templates."""
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Convert python template format into regex
+            # e.g. "fail2ban-client set sshd banip {source_ip}" -> "fail2ban\-client set sshd banip .*"
+            pattern = re.escape(template)
+            pattern = pattern.replace(r"\{source_ip\}", r"[^\s]+")
+            pattern = pattern.replace(r"\{pid\}", r"\d+")
+            pattern = pattern.replace(r"\{resource\}", r"[^\s]+")
+            pattern = pattern.replace(r"\{namespace\}", r"[^\s]+")
+
+            # Exact match
+            if re.fullmatch(pattern, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -156,7 +181,7 @@ class RemediationEngine:
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

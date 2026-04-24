@@ -6,7 +6,7 @@ Flask-based live threat feed, incident timeline, and risk heatmap.
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from flask import Flask, render_template, jsonify, Response
 import threading
@@ -53,7 +53,7 @@ def api_incidents():
 @app.route("/api/stats")
 def api_stats():
     incidents = load_incidents()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     last_24h = [i for i in incidents if _within_hours(i.get("timestamp", ""), 24)]
     return jsonify({
         "total_all_time": len(incidents),
@@ -88,7 +88,9 @@ def stream():
 def _within_hours(ts_str, hours):
     try:
         ts = datetime.fromisoformat(ts_str)
-        return datetime.utcnow() - ts < timedelta(hours=hours)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - ts < timedelta(hours=hours)
     except Exception:
         return False
 

@@ -6,7 +6,7 @@ Sends rich embed alerts to a Discord channel via webhook.
 import logging
 import os
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class DiscordAlerter:
                 "color": color,
                 "fields": fields,
                 "footer": {"text": "Sentinel AI • github.com/Nasimashaoz/sentinel-ai"},
-                "timestamp": threat.get("timestamp", datetime.utcnow().isoformat()),
+                "timestamp": threat.get("timestamp", datetime.now(timezone.utc).isoformat()),
             }]
         }
 

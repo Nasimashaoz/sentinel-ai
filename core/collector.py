@@ -9,7 +9,7 @@ import os
 import re
 import subprocess
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -52,9 +52,9 @@ class LogCollector:
                 match = fail_pattern.search(line)
                 if match:
                     ip = match.group(1)
-                    self.failed_logins[ip].append(datetime.utcnow())
+                    self.failed_logins[ip].append(datetime.now(timezone.utc))
                     # Keep only last 5 min
-                    cutoff = datetime.utcnow() - timedelta(minutes=5)
+                    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
                     self.failed_logins[ip] = [
                         t for t in self.failed_logins[ip] if t > cutoff
                     ]

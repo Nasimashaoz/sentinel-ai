@@ -15,7 +15,7 @@ import asyncio
 import logging
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import aiohttp
 
@@ -93,14 +93,14 @@ class TelegramBot:
 
     def _cmd_status(self) -> str:
         incidents = self._load_incidents()
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         last_24h = [i for i in incidents if self._after(i.get("timestamp", ""), cutoff)]
         critical = sum(1 for i in last_24h if i.get("risk") == "CRITICAL")
         high = sum(1 for i in last_24h if i.get("risk") == "HIGH")
         return (
             f"🛡️ *Sentinel AI — Status*\n"
             f"💻 Host: `{os.uname().nodename}`\n"
-            f"🕒 Time: `{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}`\n\n"
+            f"🕒 Time: `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`\n\n"
             f"📊 *Last 24 hours:*\n"
             f"   🚨 Critical: {critical}\n"
             f"   🔴 High: {high}\n"
@@ -110,7 +110,7 @@ class TelegramBot:
 
     def _cmd_report(self) -> str:
         incidents = self._load_incidents()
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         last_24h = sorted(
             [i for i in incidents if self._after(i.get("timestamp", ""), cutoff)],
             key=lambda x: x.get("timestamp", ""), reverse=True
@@ -177,6 +177,9 @@ class TelegramBot:
 
     def _after(self, ts_str: str, cutoff: datetime) -> bool:
         try:
-            return datetime.fromisoformat(ts_str) >= cutoff
+            dt = datetime.fromisoformat(ts_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt >= cutoff
         except Exception:
             return False

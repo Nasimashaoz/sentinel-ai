@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 import aiohttp
 
 log = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class MeshNode:
         """Send a detected threat to the mesh coordinator."""
         if not self.enabled:
             return
-        payload = {**threat, "server": SERVER_NAME, "timestamp": threat.get("timestamp", datetime.utcnow().isoformat())}
+        payload = {**threat, "server": SERVER_NAME, "timestamp": threat.get("timestamp", datetime.now(timezone.utc).isoformat())}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -81,7 +81,7 @@ class MeshNode:
             async with aiohttp.ClientSession() as session:
                 await session.post(
                     f"{self.coordinator}/api/heartbeat",
-                    json={"server": SERVER_NAME, "ts": datetime.utcnow().isoformat()},
+                    json={"server": SERVER_NAME, "ts": datetime.now(timezone.utc).isoformat()},
                     headers=self._headers,
                     timeout=aiohttp.ClientTimeout(total=3),
                 )

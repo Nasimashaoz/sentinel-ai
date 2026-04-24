@@ -98,41 +98,73 @@ class KubernetesCollector:
                 if event_time.replace(tzinfo=timezone.utc) < since:
                     continue
 
-                reason = event.reason or ""
-                msg = event.message or ""
-                namespace = event.metadata.namespace
-                name = event.involved_object.name or ""
-                kind = event.involved_object.kind or ""
-
-                # Pod crash / OOMKilled
-                if reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
-                    events.append({
-                        "type": "K8S_POD_CRASH",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
-
-                # Image pull failure — possible supply chain attack
-                elif reason in ("ErrImagePull", "ImagePullBackOff"):
-                    events.append({
-                        "type": "K8S_IMAGE_PULL_FAILURE",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
+                parsed = self._parse_event(event)
+                if parsed:
+                    events.append(parsed)
 
         except Exception as e:
             log.debug(f"K8s pod events error: {e}")
         return events
+
+    def _parse_event(self, event) -> Optional[dict]:
+        event_time = event.last_timestamp or event.event_time or datetime.now(timezone.utc)
+        reason = event.reason or ""
+        msg = event.message or ""
+        namespace = event.involved_object.namespace or ""
+        name = event.involved_object.name or ""
+        kind = event.involved_object.kind or ""
+
+        # Pod crash / OOMKilled
+        if reason == "OOMKilling":
+            return {
+                "type": "K8S_OOM_KILLED",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg} in {name}",
+                "timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+            }
+
+        elif reason in ("Killed", "Failed"):
+            return {
+                "type": "K8S_POD_CRASH",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg}",
+                "timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+            }
+
+        # Image pull failure — possible supply chain attack
+        elif reason == "BackOff" and "pulling image" in msg:
+            return {
+                "type": "K8S_IMAGE_PULL_BACKOFF",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg}",
+                "timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+            }
+
+        elif reason in ("ErrImagePull", "ImagePullBackOff"):
+            return {
+                "type": "K8S_IMAGE_PULL_FAILURE",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg}",
+                "timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+            }
+
+        return None
 
     def _collect_rbac_violations(self, since: datetime) -> list:
         """Detect Forbidden API calls indicating RBAC misuse."""

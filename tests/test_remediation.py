@@ -24,20 +24,38 @@ class TestRemediationSafety:
 
     def test_dry_run_by_default(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=False)
-        assert engine.enabled is False
+        assert engine.dry_run is True
 
     def test_only_whitelisted_commands_allowed(self, tmp_path):
-        engine = self._make_engine(tmp_path, auto=True)
-        # Non-whitelisted command must be rejected
-        result = engine._is_safe_command("rm -rf /")
-        assert result is False
+        import asyncio
+        with patch('core.remediation.AUTO_REMEDIATE', True):
+            engine = self._make_engine(tmp_path, auto=True)
+        # Non-whitelisted threat
+        result = asyncio.run(engine.handle({"type": "UNKNOWN_THREAT"}))
+        assert result["action"] == "none"
 
     def test_fail2ban_is_whitelisted(self, tmp_path):
-        engine = self._make_engine(tmp_path, auto=True)
-        result = engine._is_safe_command("fail2ban-client set sshd banip 1.2.3.4")
-        assert result is True
+        import asyncio
+        from unittest.mock import patch
+        with patch('core.remediation.AUTO_REMEDIATE', True):
+            engine = self._make_engine(tmp_path, auto=True)
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "Success"
+            mock_run.return_value.stderr = ""
+            result = asyncio.run(engine.handle({"type": "BRUTE_FORCE", "source_ip": "1.2.3.4"}))
+            assert result["action"] == "executed"
+            assert "fail2ban-client set sshd banip 1.2.3.4" in result["command"]
 
     def test_iptables_drop_is_whitelisted(self, tmp_path):
-        engine = self._make_engine(tmp_path, auto=True)
-        result = engine._is_safe_command("iptables -A INPUT -s 1.2.3.4 -j DROP")
-        assert result is True
+        import asyncio
+        from unittest.mock import patch
+        with patch('core.remediation.AUTO_REMEDIATE', True):
+            engine = self._make_engine(tmp_path, auto=True)
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "Success"
+            mock_run.return_value.stderr = ""
+            result = asyncio.run(engine.handle({"type": "PORT_SCAN", "source_ip": "1.2.3.4"}))
+            assert result["action"] == "executed"
+            assert "iptables -A INPUT -s 1.2.3.4 -j DROP" in result["command"]

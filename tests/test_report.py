@@ -4,6 +4,7 @@ Sentinel AI — Tests for ReportGenerator
 
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -27,7 +28,7 @@ def test_save_incident_and_report():
             "source_ip": "1.2.3.4",
             "service": "SSH",
             "count": 50,
-            "timestamp": "2026-04-13T10:00:00",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "ai_analysis": "Brute force from known scanner.",
             "remediation": "iptables -A INPUT -s 1.2.3.4 -j DROP",
         })

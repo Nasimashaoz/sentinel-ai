@@ -111,6 +111,14 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
+        # Verify the command matches the whitelist
+        if not self._is_safe_command(cmd):
+            return {
+                "action": "skipped",
+                "reason": "Command failed safety whitelist check",
+                "command": cmd
+            }
+
         if self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
@@ -153,6 +161,18 @@ class RemediationEngine:
         except Exception as e:
             log.error(f"Remediation execution error: {e}")
             return {"action": "error", "command": cmd, "error": str(e)}
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Check if a given command matches any whitelisted command templates."""
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if playbook.get("command"):
+                # Simple check: replace format strings with a generic pattern and match
+                pattern = re.sub(r'\{[^}]+\}', '.*', playbook["command"])
+                # We want a fairly strict match
+                if re.match(f"^{pattern}$", cmd):
+                    return True
+        return False
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {

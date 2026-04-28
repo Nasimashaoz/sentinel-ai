@@ -68,15 +68,15 @@ class TestAWSCollector:
             from core.collectors.aws_collector import AWSCollector
             c = AWSCollector()
             event = {
-                "eventName": "ConsoleLogin",
-                "userIdentity": {"type": "Root", "arn": "arn:aws:iam::123:root"},
-                "sourceIPAddress": "1.2.3.4",
-                "eventTime": "2026-04-13T08:00:00Z",
-                "requestParameters": None,
+                "EventName": "ConsoleLogin",
+                "Username": "root",
+                "SourceIPAddress": "1.2.3.4",
+                "EventTime": "2026-04-13T08:00:00Z",
+                "Resources": [],
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_ROOT_LOGIN"
+            assert result["type"] == "AWS_ROOT_USAGE"
             assert result["risk"] == "CRITICAL"
 
     def test_parse_cloudtrail_disabled(self):
@@ -85,13 +85,13 @@ class TestAWSCollector:
             from core.collectors.aws_collector import AWSCollector
             c = AWSCollector()
             event = {
-                "eventName": "StopLogging",
-                "userIdentity": {"type": "IAMUser", "arn": "arn:aws:iam::123:user/hacker"},
-                "sourceIPAddress": "5.6.7.8",
-                "eventTime": "2026-04-13T08:00:00Z",
-                "requestParameters": None,
+                "EventName": "StopLogging",
+                "Username": "hacker",
+                "SourceIPAddress": "5.6.7.8",
+                "EventTime": "2026-04-13T08:00:00Z",
+                "Resources": [],
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_CLOUDTRAIL_DISABLED"
+            assert result["type"] == "AWS_LOGGING_DISABLED"
             assert result["risk"] == "CRITICAL"

@@ -78,6 +78,22 @@ class RemediationEngine:
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
 
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Strictly validate command against whitelist templates."""
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            template = playbook.get("command")
+            if not template:
+                continue
+            # Convert template to regex pattern safely
+            # Escaping the string first, then replacing the bracketed fields with wildcard
+            pattern_str = re.escape(template)
+            pattern_str = re.sub(r'\\{[a-zA-Z0-9_]+\\}', r'.*', pattern_str)
+            # Make sure it matches the entire string
+            if re.fullmatch(pattern_str, cmd):
+                return True
+        return False
+
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
         t_type = threat.get("type", "")
@@ -97,6 +113,9 @@ class RemediationEngine:
             )
         except KeyError as e:
             return {"action": "none", "reason": f"Missing template variable: {e}"}
+
+        if not self._is_safe_command(cmd):
+            return {"action": "rejected", "reason": "Command not in whitelist playbook"}
 
         rollback = None
         if playbook.get("rollback"):
@@ -155,8 +174,9 @@ class RemediationEngine:
             return {"action": "error", "command": cmd, "error": str(e)}
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
+        from datetime import timezone
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

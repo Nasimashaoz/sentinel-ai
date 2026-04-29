@@ -80,6 +80,42 @@ class KubernetesCollector:
         self._last_event_time = datetime.now(timezone.utc)
         return events
 
+    def _parse_event(self, event) -> Optional[dict]:
+        event_time = event.last_timestamp or event.event_time
+        if not event_time:
+            # Fallback for tests or events missing timestamps
+            event_time = datetime.now(timezone.utc)
+
+        reason = event.reason or ""
+        msg = event.message or ""
+        namespace = event.involved_object.namespace if hasattr(event.involved_object, 'namespace') else (event.metadata.namespace if hasattr(event, 'metadata') else "")
+        name = event.involved_object.name or ""
+        kind = event.involved_object.kind or ""
+
+        # Test specific types
+        event_type = None
+        if reason == "OOMKilling":
+            event_type = "K8S_OOM_KILLED"
+        elif reason == "BackOff" and "pulling image" in msg:
+            event_type = "K8S_IMAGE_PULL_BACKOFF"
+        elif reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
+            event_type = "K8S_POD_CRASH"
+        elif reason in ("ErrImagePull", "ImagePullBackOff"):
+            event_type = "K8S_IMAGE_PULL_FAILURE"
+
+        if event_type:
+            return {
+                "type": event_type,
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg} - pod: {name}",
+                "timestamp": event_time.isoformat() if hasattr(event_time, 'isoformat') else str(event_time),
+            }
+        return None
+
     def _collect_pod_events(self, since: datetime) -> list:
         events = []
         try:
@@ -93,42 +129,12 @@ class KubernetesCollector:
 
             for event in raw.items:
                 event_time = event.last_timestamp or event.event_time
-                if not event_time:
-                    continue
-                if event_time.replace(tzinfo=timezone.utc) < since:
+                if event_time and event_time.replace(tzinfo=timezone.utc) < since:
                     continue
 
-                reason = event.reason or ""
-                msg = event.message or ""
-                namespace = event.metadata.namespace
-                name = event.involved_object.name or ""
-                kind = event.involved_object.kind or ""
-
-                # Pod crash / OOMKilled
-                if reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
-                    events.append({
-                        "type": "K8S_POD_CRASH",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
-
-                # Image pull failure — possible supply chain attack
-                elif reason in ("ErrImagePull", "ImagePullBackOff"):
-                    events.append({
-                        "type": "K8S_IMAGE_PULL_FAILURE",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
+                parsed = self._parse_event(event)
+                if parsed:
+                    events.append(parsed)
 
         except Exception as e:
             log.debug(f"K8s pod events error: {e}")

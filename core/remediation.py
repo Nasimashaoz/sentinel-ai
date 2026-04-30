@@ -111,7 +111,9 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
-        if self.dry_run:
+        if not self._is_safe_command(cmd):
+            result = {"action": "none", "reason": "Command not in whitelist playbook"}
+        elif self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
             result = await self._execute(cmd, rollback, playbook["description"])
@@ -125,6 +127,18 @@ class RemediationEngine:
 
         self._audit(threat, cmd, rollback, result)
         return result
+
+    def _is_safe_command(self, command: str) -> bool:
+        if not command:
+            return False
+        for entry in REMEDIATION_PLAYBOOK.values():
+            playbook_cmd = entry.get("command")
+            if not playbook_cmd:
+                continue
+            base = playbook_cmd.split("{")[0].strip()
+            if command.startswith(base):
+                return True
+        return False
 
     def _dry_run(self, cmd: str, rollback: str, description: str) -> dict:
         log.info(f"🔍 DRY RUN — would execute: {cmd}")
@@ -155,8 +169,9 @@ class RemediationEngine:
             return {"action": "error", "command": cmd, "error": str(e)}
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
+        from datetime import timezone
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

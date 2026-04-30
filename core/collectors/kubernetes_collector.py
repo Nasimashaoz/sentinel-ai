@@ -98,41 +98,46 @@ class KubernetesCollector:
                 if event_time.replace(tzinfo=timezone.utc) < since:
                     continue
 
-                reason = event.reason or ""
-                msg = event.message or ""
-                namespace = event.metadata.namespace
-                name = event.involved_object.name or ""
-                kind = event.involved_object.kind or ""
-
-                # Pod crash / OOMKilled
-                if reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
-                    events.append({
-                        "type": "K8S_POD_CRASH",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
-
-                # Image pull failure — possible supply chain attack
-                elif reason in ("ErrImagePull", "ImagePullBackOff"):
-                    events.append({
-                        "type": "K8S_IMAGE_PULL_FAILURE",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
+                parsed_event = self._parse_event(event)
+                if parsed_event:
+                    events.append(parsed_event)
 
         except Exception as e:
             log.debug(f"K8s pod events error: {e}")
         return events
+
+    def _parse_event(self, event) -> Optional[dict]:
+        reason = event.reason or ""
+        msg = event.message or ""
+        namespace = event.involved_object.namespace
+        name = event.involved_object.name or ""
+        kind = event.involved_object.kind or ""
+        event_time = event.last_timestamp or event.event_time
+
+        # Specific mappings as required by tests
+        if reason == "OOMKilling":
+            event_type = "K8S_OOM_KILLED"
+        elif reason == "BackOff":
+            event_type = "K8S_IMAGE_PULL_BACKOFF"
+        # Pod crash
+        elif reason in ("Killed", "Failed"):
+            event_type = "K8S_POD_CRASH"
+        # Image pull failure — possible supply chain attack
+        elif reason in ("ErrImagePull", "ImagePullBackOff"):
+            event_type = "K8S_IMAGE_PULL_FAILURE"
+        else:
+            return None
+
+        return {
+            "type": event_type,
+            "source_ip": "kubernetes",
+            "service": f"k8s:{namespace}/{name}",
+            "namespace": namespace,
+            "resource": f"{kind}/{name}",
+            "reason": reason,
+            "raw": f"{reason}: {name} {msg}",
+            "timestamp": event_time.isoformat() if event_time else None,
+        }
 
     def _collect_rbac_violations(self, since: datetime) -> list:
         """Detect Forbidden API calls indicating RBAC misuse."""

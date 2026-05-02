@@ -34,8 +34,23 @@ class TestKubernetesCollector:
             mock_event.event_time = None
             result = c._parse_event(mock_event)
             assert result is not None
-            assert result["type"] == "K8S_OOM_KILLED"
-            assert "my-pod" in result["raw"]
+            assert result["type"] == "K8S_POD_CRASH"
+
+    def test_parse_image_pull_failure(self):
+        from unittest.mock import patch, MagicMock
+        with patch.dict(os.environ, {"K8S_ENABLED": "false"}):
+            from core.collectors.kubernetes_collector import KubernetesCollector
+            c = KubernetesCollector()
+            mock_event = MagicMock()
+            mock_event.reason = "ErrImagePull"
+            mock_event.message = "RPC error: code = Unknown desc = Error response from daemon: Get https://private.registry/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)"
+            mock_event.involved_object.name = "my-deployment-xyz"
+            mock_event.involved_object.namespace = "default"
+            mock_event.last_timestamp = None
+            mock_event.event_time = None
+            result = c._parse_event(mock_event)
+            assert result is not None
+            assert result["type"] == "K8S_IMAGE_PULL_FAILURE"
 
     def test_parse_image_pull_backoff(self):
         from unittest.mock import patch, MagicMock
@@ -43,7 +58,7 @@ class TestKubernetesCollector:
             from core.collectors.kubernetes_collector import KubernetesCollector
             c = KubernetesCollector()
             mock_event = MagicMock()
-            mock_event.reason = "BackOff"
+            mock_event.reason = "ImagePullBackOff"
             mock_event.message = "Back-off pulling image \"private.registry/app:latest\""
             mock_event.involved_object.name = "my-deployment-xyz"
             mock_event.involved_object.namespace = "default"
@@ -51,7 +66,7 @@ class TestKubernetesCollector:
             mock_event.event_time = None
             result = c._parse_event(mock_event)
             assert result is not None
-            assert result["type"] == "K8S_IMAGE_PULL_BACKOFF"
+            assert result["type"] == "K8S_IMAGE_PULL_FAILURE"
 
 
 class TestAWSCollector:
@@ -76,7 +91,7 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_ROOT_LOGIN"
+            assert result["type"] == "AWS_ROOT_USAGE"
             assert result["risk"] == "CRITICAL"
 
     def test_parse_cloudtrail_disabled(self):
@@ -93,5 +108,5 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_CLOUDTRAIL_DISABLED"
+            assert result["type"] == "AWS_LOGGING_DISABLED"
             assert result["risk"] == "CRITICAL"

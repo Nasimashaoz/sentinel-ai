@@ -73,10 +73,38 @@ REMEDIATION_PLAYBOOK = {
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = not self.dry_run
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Validate a command strictly against the REMEDIATION_PLAYBOOK templates."""
+        import re
+        for key, playbook in REMEDIATION_PLAYBOOK.items():
+            if not playbook.get("command"):
+                continue
+
+            # Create a regex to match the command with wildcards for {ip}, {pid}, etc.
+            template = playbook["command"]
+
+            # First, separate the template parts from the parameters
+            parts = re.split(r'(\{[a-zA-Z0-9_]+\})', template)
+            regex_parts = []
+            for part in parts:
+                if re.match(r'^\{[a-zA-Z0-9_]+\}$', part):
+                    # It's a parameter like {source_ip}, replace with strict wildcard matching safe chars
+                    regex_parts.append(r'[a-zA-Z0-9_.-]+')
+                elif part:
+                    # It's static text, escape any regex metacharacters
+                    regex_parts.append(re.escape(part))
+
+            regex_str = "^" + "".join(regex_parts) + "$"
+
+            if re.match(regex_str, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -110,6 +138,9 @@ class RemediationEngine:
         # Safety gate
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
+
+        if not self._is_safe_command(cmd):
+            return {"action": "rejected", "reason": "Command not matched against whitelist templates"}
 
         if self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])

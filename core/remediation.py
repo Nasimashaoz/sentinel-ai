@@ -70,13 +70,31 @@ REMEDIATION_PLAYBOOK = {
 }
 
 
+import re
+
 class RemediationEngine:
     def __init__(self):
+        self.enabled = AUTO_REMEDIATE
         self.dry_run = not AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Strictly validate against the whitelist REMEDIATION_PLAYBOOK to prevent command injection."""
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if not playbook.get("command"):
+                continue
+
+            template = playbook["command"]
+            # Escape static parts but turn {var_name} into strict word-match regex
+            regex_str = "^" + re.escape(template) + "$"
+            regex_str = re.sub(r'\\\{[a-zA-Z0-9_]+\\\}', r'[a-zA-Z0-9_.-]+', regex_str)
+
+            if re.match(regex_str, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -110,8 +128,11 @@ class RemediationEngine:
         # Safety gate
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
+        is_safe_cmd = self._is_safe_command(cmd)
 
-        if self.dry_run:
+        if not is_safe_cmd:
+            result = {"action": "error", "reason": "Command failed safety validation", "command": cmd}
+        elif self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
             result = await self._execute(cmd, rollback, playbook["description"])

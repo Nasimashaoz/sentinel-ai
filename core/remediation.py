@@ -73,10 +73,31 @@ REMEDIATION_PLAYBOOK = {
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Validate command strictly against playbook whitelists using regex."""
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Escape the static parts and replace the placeholders with strict safe characters
+            escaped_template = re.escape(template)
+            regex_pattern = escaped_template.replace(r'\{source_ip\}', r'[a-zA-Z0-9_.-]+') \
+                                            .replace(r'\{pid\}', r'[a-zA-Z0-9_.-]+') \
+                                            .replace(r'\{resource\}', r'[a-zA-Z0-9_.-]+') \
+                                            .replace(r'\{namespace\}', r'[a-zA-Z0-9_.-]+')
+
+            # Anchor to start and end
+            if re.fullmatch(regex_pattern, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -106,6 +127,9 @@ class RemediationEngine:
                 )
             except Exception:
                 pass
+
+        if not self._is_safe_command(cmd):
+            return {"action": "error", "reason": "Command rejected by safety whitelist"}
 
         # Safety gate
         safe = playbook.get("safe_for_auto", False)
@@ -155,8 +179,9 @@ class RemediationEngine:
             return {"action": "error", "command": cmd, "error": str(e)}
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
+        from datetime import timezone
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

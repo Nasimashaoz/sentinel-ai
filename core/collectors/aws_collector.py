@@ -98,11 +98,24 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
-        resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
+        event_name = ct_event.get("EventName") or ct_event.get("eventName", "")
+        username = ct_event.get("Username") or ct_event.get("username")
+        if not username:
+            user_identity = ct_event.get("userIdentity") or ct_event.get("UserIdentity", {})
+            user_type = user_identity.get("type") or user_identity.get("Type")
+            if user_type == "Root":
+                username = "root"
+            elif user_type == "IAMUser":
+                arn = user_identity.get("arn") or user_identity.get("Arn", "")
+                username = arn.split("/")[-1] if "/" in arn else "unknown"
+            else:
+                username = "unknown"
+
+        source_ip = ct_event.get("SourceIPAddress") or ct_event.get("sourceIPAddress", "unknown")
+        event_time = ct_event.get("EventTime") or ct_event.get("eventTime", datetime.now(timezone.utc))
+
+        resources_list = ct_event.get("Resources") or ct_event.get("resources", [])
+        resources = [r.get("ResourceName") or r.get("resourceName", "") for r in resources_list]
         resource_str = ", ".join(resources) if resources else "N/A"
 
         # Root account usage — always CRITICAL

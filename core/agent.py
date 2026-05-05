@@ -5,7 +5,7 @@ Orchestrates collection, analysis, and alerting.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from typing import List
 
 from core.collector import LogCollector
@@ -57,7 +57,7 @@ class SentinelAgent:
                     threat = await self.analyzer.analyze(event)
                     if threat:
                         threat["score"] = self.scorer.score(threat)
-                        threat["timestamp"] = datetime.utcnow().isoformat()
+                        threat["timestamp"] = datetime.now(timezone.utc).isoformat()
                         self.incidents.append(threat)
 
                         if self._should_alert(threat):

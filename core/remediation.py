@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from pathlib import Path
 import json
 
@@ -78,6 +78,27 @@ class RemediationEngine:
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
 
+    def _is_safe_command(self, cmd: str) -> bool:
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Escape the template string except for the format parameters
+            pattern = re.escape(template)
+
+            # Replace escaped format parameter placeholders with strict character classes
+            pattern = pattern.replace(r'\{source_ip\}', r'[a-zA-Z0-9_.-]+')
+            pattern = pattern.replace(r'\{pid\}', r'[a-zA-Z0-9_.-]+')
+            pattern = pattern.replace(r'\{resource\}', r'[a-zA-Z0-9_.-]+')
+            pattern = pattern.replace(r'\{namespace\}', r'[a-zA-Z0-9_.-]+')
+
+            # Match exactly from start to end to prevent space-less injection
+            if re.match(f"^{pattern}$", cmd):
+                return True
+        return False
+
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
         t_type = threat.get("type", "")
@@ -97,6 +118,10 @@ class RemediationEngine:
             )
         except KeyError as e:
             return {"action": "none", "reason": f"Missing template variable: {e}"}
+
+        # Check safety whitelist before proceeding
+        if not self._is_safe_command(cmd):
+            return {"action": "blocked", "reason": "Command failed safety whitelist validation", "command": cmd}
 
         rollback = None
         if playbook.get("rollback"):
@@ -156,7 +181,7 @@ class RemediationEngine:
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

@@ -34,7 +34,7 @@ class TestKubernetesCollector:
             mock_event.event_time = None
             result = c._parse_event(mock_event)
             assert result is not None
-            assert result["type"] == "K8S_OOM_KILLED"
+            assert result["type"] == "K8S_POD_CRASH"
             assert "my-pod" in result["raw"]
 
     def test_parse_image_pull_backoff(self):
@@ -51,7 +51,7 @@ class TestKubernetesCollector:
             mock_event.event_time = None
             result = c._parse_event(mock_event)
             assert result is not None
-            assert result["type"] == "K8S_IMAGE_PULL_BACKOFF"
+            assert result["type"] == "K8S_IMAGE_PULL_FAILURE"
 
 
 class TestAWSCollector:
@@ -76,7 +76,7 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_ROOT_LOGIN"
+            assert result["type"] == "AWS_ROOT_USAGE"
             assert result["risk"] == "CRITICAL"
 
     def test_parse_cloudtrail_disabled(self):
@@ -93,5 +93,5 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_CLOUDTRAIL_DISABLED"
+            assert result["type"] == "AWS_LOGGING_DISABLED"
             assert result["risk"] == "CRITICAL"

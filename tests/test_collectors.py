@@ -76,7 +76,7 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_ROOT_LOGIN"
+            assert result["type"] == "AWS_ROOT_USAGE"
             assert result["risk"] == "CRITICAL"
 
     def test_parse_cloudtrail_disabled(self):
@@ -93,5 +93,5 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_CLOUDTRAIL_DISABLED"
+            assert result["type"] == "AWS_LOGGING_DISABLED"
             assert result["risk"] == "CRITICAL"

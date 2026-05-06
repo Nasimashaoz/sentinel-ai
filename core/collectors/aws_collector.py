@@ -98,12 +98,24 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
-        resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
-        resource_str = ", ".join(resources) if resources else "N/A"
+        event_name = ct_event.get("EventName", ct_event.get("eventName", ""))
+        source_ip = ct_event.get("SourceIPAddress", ct_event.get("sourceIPAddress", "unknown"))
+        event_time = ct_event.get("EventTime", ct_event.get("eventTime", datetime.now(timezone.utc)))
+
+        resources = ct_event.get("Resources", ct_event.get("resources", []))
+        parsed_resources = [r.get("ResourceName", r.get("resourceName", "")) for r in resources] if isinstance(resources, list) else []
+        resource_str = ", ".join(parsed_resources) if parsed_resources else "N/A"
+
+        username = ct_event.get("Username", ct_event.get("username", ""))
+        if not username:
+            user_identity = ct_event.get("UserIdentity", ct_event.get("userIdentity", {}))
+            if isinstance(user_identity, dict):
+                if user_identity.get("type") == "Root" or user_identity.get("Type") == "Root":
+                    username = "root"
+                else:
+                    username = user_identity.get("userName", user_identity.get("UserName", "unknown"))
+        if not username:
+            username = "unknown"
 
         # Root account usage — always CRITICAL
         if username == "root":

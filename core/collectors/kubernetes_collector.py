@@ -98,41 +98,60 @@ class KubernetesCollector:
                 if event_time.replace(tzinfo=timezone.utc) < since:
                     continue
 
-                reason = event.reason or ""
-                msg = event.message or ""
-                namespace = event.metadata.namespace
-                name = event.involved_object.name or ""
-                kind = event.involved_object.kind or ""
-
-                # Pod crash / OOMKilled
-                if reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
-                    events.append({
-                        "type": "K8S_POD_CRASH",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
-
-                # Image pull failure — possible supply chain attack
-                elif reason in ("ErrImagePull", "ImagePullBackOff"):
-                    events.append({
-                        "type": "K8S_IMAGE_PULL_FAILURE",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
+                parsed = self._parse_event(event)
+                if parsed:
+                    events.append(parsed)
 
         except Exception as e:
             log.debug(f"K8s pod events error: {e}")
         return events
+
+    def _parse_event(self, event) -> Optional[dict]:
+        reason = getattr(event, "reason", "") or ""
+        msg = getattr(event, "message", "") or ""
+
+        namespace = "default"
+        if hasattr(event, "metadata") and event.metadata:
+            namespace = getattr(event.metadata, "namespace", "default")
+        elif hasattr(event, "involved_object") and event.involved_object:
+            namespace = getattr(event.involved_object, "namespace", "default")
+
+        name = ""
+        kind = ""
+        if hasattr(event, "involved_object") and event.involved_object:
+            name = getattr(event.involved_object, "name", "") or ""
+            kind = getattr(event.involved_object, "kind", "") or ""
+
+        event_time = getattr(event, "last_timestamp", None) or getattr(event, "event_time", None)
+        timestamp = event_time.isoformat() if hasattr(event_time, "isoformat") else str(event_time) if event_time else datetime.now(timezone.utc).isoformat()
+
+        # Pod crash / OOMKilled
+        if reason in ("OOMKilling", "Killed", "Failed"):
+            return {
+                "type": "K8S_OOM_KILLED" if reason == "OOMKilling" else "K8S_POD_CRASH",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg} {name}",
+                "timestamp": timestamp,
+            }
+
+        # Image pull failure — possible supply chain attack
+        if reason in ("ErrImagePull", "ImagePullBackOff", "BackOff"):
+            return {
+                "type": "K8S_IMAGE_PULL_BACKOFF" if "BackOff" in reason else "K8S_IMAGE_PULL_FAILURE",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg}",
+                "timestamp": timestamp,
+            }
+
+        return None
 
     def _collect_rbac_violations(self, since: datetime) -> list:
         """Detect Forbidden API calls indicating RBAC misuse."""

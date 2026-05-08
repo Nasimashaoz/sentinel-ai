@@ -98,11 +98,22 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
-        resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
+        event_name = ct_event.get("EventName") or ct_event.get("eventName", "")
+
+        # Handle Username nested under userIdentity for Root
+        user_identity = ct_event.get("userIdentity") or ct_event.get("UserIdentity", {})
+        username = "unknown"
+        if isinstance(user_identity, dict):
+            if user_identity.get("type") == "Root" or user_identity.get("Type") == "Root":
+                username = "root"
+            else:
+                username = ct_event.get("Username") or ct_event.get("userName") or ct_event.get("username", "unknown")
+        else:
+            username = ct_event.get("Username") or ct_event.get("userName") or ct_event.get("username", "unknown")
+
+        source_ip = ct_event.get("SourceIPAddress") or ct_event.get("sourceIPAddress", "unknown")
+        event_time = ct_event.get("EventTime") or ct_event.get("eventTime", datetime.now(timezone.utc))
+        resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])] if ct_event.get("Resources") else []
         resource_str = ", ".join(resources) if resources else "N/A"
 
         # Root account usage — always CRITICAL
@@ -122,7 +133,7 @@ class AWSCollector:
         # CloudTrail disabled — attack covering tracks
         if event_name in ("StopLogging", "DeleteTrail"):
             return {
-                "type": "AWS_LOGGING_DISABLED",
+                "type": "AWS_CLOUDTRAIL_DISABLED",
                 "source_ip": source_ip,
                 "service": f"AWS:CloudTrail",
                 "aws_event": event_name,

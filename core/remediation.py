@@ -72,11 +72,35 @@ REMEDIATION_PLAYBOOK = {
 
 class RemediationEngine:
     def __init__(self):
+        self.enabled = AUTO_REMEDIATE
         self.dry_run = not AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if not playbook.get("command"):
+                continue
+
+            # Escape static parts of the command template
+            template = playbook["command"]
+
+            # Create a regex pattern by substituting placeholders with strict character classes
+            pattern = re.escape(template)
+            pattern = pattern.replace('\\{source_ip\\}', r'[a-zA-Z0-9_.-]+')
+            pattern = pattern.replace('\\{pid\\}', r'[0-9]+')
+            pattern = pattern.replace('\\{resource\\}', r'[a-zA-Z0-9_./-]+')
+            pattern = pattern.replace('\\{namespace\\}', r'[a-zA-Z0-9_.-]+')
+
+            # Match the exact command
+            if re.match(f"^{pattern}$", cmd):
+                return True
+
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -97,6 +121,10 @@ class RemediationEngine:
             )
         except KeyError as e:
             return {"action": "none", "reason": f"Missing template variable: {e}"}
+
+        # Safety validation
+        if not self._is_safe_command(cmd):
+            return {"action": "rejected", "reason": "Command not whitelisted"}
 
         rollback = None
         if playbook.get("rollback"):

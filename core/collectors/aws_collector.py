@@ -98,17 +98,33 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
-        resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
+        event_name = ct_event.get("EventName", ct_event.get("eventName", ""))
+
+        # Username can be at top level or nested inside userIdentity depending on how CloudTrail formatted it
+        username = ct_event.get("Username", ct_event.get("username"))
+        if not username:
+            user_identity = ct_event.get("userIdentity", ct_event.get("UserIdentity", {}))
+            username = user_identity.get("userName", user_identity.get("UserName"))
+            if not username:
+                u_type = user_identity.get("type", user_identity.get("Type"))
+                if u_type == "Root":
+                    username = "root"
+                elif u_type == "IAMUser":
+                    arn = user_identity.get("arn", user_identity.get("Arn", ""))
+                    if "user/" in arn:
+                        username = arn.split("user/")[-1]
+
+        username = username or "unknown"
+
+        source_ip = ct_event.get("SourceIPAddress", ct_event.get("sourceIPAddress", "unknown"))
+        event_time = ct_event.get("EventTime", ct_event.get("eventTime", datetime.now(timezone.utc)))
+        resources = [r.get("ResourceName", r.get("resourceName", "")) for r in ct_event.get("Resources", ct_event.get("resources", []))]
         resource_str = ", ".join(resources) if resources else "N/A"
 
         # Root account usage — always CRITICAL
         if username == "root":
             return {
-                "type": "AWS_ROOT_USAGE",
+                "type": "AWS_ROOT_LOGIN" if event_name == "ConsoleLogin" else "AWS_ROOT_USAGE",
                 "source_ip": source_ip,
                 "service": f"AWS:{event_name}",
                 "aws_event": event_name,
@@ -122,7 +138,7 @@ class AWSCollector:
         # CloudTrail disabled — attack covering tracks
         if event_name in ("StopLogging", "DeleteTrail"):
             return {
-                "type": "AWS_LOGGING_DISABLED",
+                "type": "AWS_CLOUDTRAIL_DISABLED",
                 "source_ip": source_ip,
                 "service": f"AWS:CloudTrail",
                 "aws_event": event_name,

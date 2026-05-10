@@ -13,14 +13,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 class TestRemediationSafety:
     def _make_engine(self, tmp_dir, auto=False, critical=False):
-        env = {
-            "AUTO_REMEDIATE": str(auto).lower(),
-            "AUTO_REMEDIATE_CRITICAL": str(critical).lower(),
-        }
-        with patch.dict(os.environ, env):
-            with patch("core.remediation.AUDIT_LOG", Path(tmp_dir) / "audit.jsonl"):
-                from core.remediation import RemediationEngine
-                return RemediationEngine()
+        import core.remediation as cr
+        cr.AUTO_REMEDIATE = auto
+        cr.AUTO_REMEDIATE_CRITICAL = critical
+        with patch("core.remediation.AUDIT_LOG", Path(tmp_dir) / "audit.jsonl"):
+            return cr.RemediationEngine()
 
     def test_dry_run_by_default(self, tmp_path):
         engine = self._make_engine(tmp_path, auto=False)

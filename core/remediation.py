@@ -70,13 +70,39 @@ REMEDIATION_PLAYBOOK = {
 }
 
 
+import re
+
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = not self.dry_run
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Strictly validate command against whitelist templates."""
+        for entry in REMEDIATION_PLAYBOOK.values():
+            if not entry.get("command"):
+                continue
+
+            # Convert template to regex pattern securely
+            # 1. Escape the entire template first
+            pattern_str = re.escape(entry["command"])
+
+            # 2. Replace escaped placeholders with strict character classes
+            pattern_str = pattern_str.replace(r'\{source_ip\}', r'[a-zA-Z0-9_.-]+')
+            pattern_str = pattern_str.replace(r'\{pid\}', r'[0-9]+')
+            pattern_str = pattern_str.replace(r'\{resource\}', r'[a-zA-Z0-9_.-]+')
+            pattern_str = pattern_str.replace(r'\{namespace\}', r'[a-zA-Z0-9_.-]+')
+
+            # 3. Exact match from start to end
+            pattern_str = f"^{pattern_str}$"
+
+            if re.match(pattern_str, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -106,6 +132,14 @@ class RemediationEngine:
                 )
             except Exception:
                 pass
+
+        # Validate command against whitelist BEFORE execution
+        if not self._is_safe_command(cmd):
+            return {
+                "action": "rejected",
+                "reason": "Command not whitelisted or failed safety validation",
+                "command": cmd,
+            }
 
         # Safety gate
         safe = playbook.get("safe_for_auto", False)

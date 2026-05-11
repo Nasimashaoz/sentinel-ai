@@ -111,20 +111,46 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
+        is_safe_command = self._is_safe_command(cmd)
+
         if self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
-        elif safe and critical_ok:
+        elif safe and critical_ok and is_safe_command:
             result = await self._execute(cmd, rollback, playbook["description"])
         else:
+            if not is_safe_command:
+                reason = "Command rejected by whitelist validation"
+            else:
+                reason = f"Manual approval required (safe={safe}, risk={risk})"
             result = {
                 "action": "skipped",
-                "reason": f"Manual approval required (safe={safe}, risk={risk})",
+                "reason": reason,
                 "command": cmd,
                 "rollback": rollback,
             }
 
         self._audit(threat, cmd, rollback, result)
         return result
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Strictly validate against the playbook whitelist to prevent injection."""
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if not playbook.get("command"):
+                continue
+            template = playbook["command"]
+            # Escape the static parts of the template string
+            pattern = re.escape(template)
+            # Replace escaped template variables with a strict regex class
+            pattern = re.sub(r'\\{source_ip\\}', r'[a-zA-Z0-9_.-]+', pattern)
+            pattern = re.sub(r'\\{pid\\}', r'[a-zA-Z0-9_.-]+', pattern)
+            pattern = re.sub(r'\\{resource\\}', r'[a-zA-Z0-9_.-]+', pattern)
+            pattern = re.sub(r'\\{namespace\\}', r'[a-zA-Z0-9_.-]+', pattern)
+
+            # The pattern must match the entire command exactly
+            if re.fullmatch(pattern, cmd):
+                return True
+        return False
 
     def _dry_run(self, cmd: str, rollback: str, description: str) -> dict:
         log.info(f"🔍 DRY RUN — would execute: {cmd}")
@@ -155,8 +181,9 @@ class RemediationEngine:
             return {"action": "error", "command": cmd, "error": str(e)}
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
+        from datetime import timezone
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

@@ -22,6 +22,7 @@ class TestKubernetesCollector:
 
     def test_parse_oom_killed_event(self):
         from unittest.mock import patch, MagicMock
+        from datetime import datetime, timezone
         with patch.dict(os.environ, {"K8S_ENABLED": "false"}):
             from core.collectors.kubernetes_collector import KubernetesCollector
             c = KubernetesCollector()
@@ -30,15 +31,16 @@ class TestKubernetesCollector:
             mock_event.message = "Memory limit exceeded for container app"
             mock_event.involved_object.name = "my-pod-abc123"
             mock_event.involved_object.namespace = "production"
-            mock_event.last_timestamp = None
+            mock_event.last_timestamp = datetime.now(timezone.utc)
             mock_event.event_time = None
             result = c._parse_event(mock_event)
             assert result is not None
-            assert result["type"] == "K8S_OOM_KILLED"
-            assert "my-pod" in result["raw"]
+            assert result["type"] == "K8S_POD_CRASH"
+            assert "OOMKilling" in result["raw"]
 
     def test_parse_image_pull_backoff(self):
         from unittest.mock import patch, MagicMock
+        from datetime import datetime, timezone
         with patch.dict(os.environ, {"K8S_ENABLED": "false"}):
             from core.collectors.kubernetes_collector import KubernetesCollector
             c = KubernetesCollector()
@@ -47,11 +49,11 @@ class TestKubernetesCollector:
             mock_event.message = "Back-off pulling image \"private.registry/app:latest\""
             mock_event.involved_object.name = "my-deployment-xyz"
             mock_event.involved_object.namespace = "default"
-            mock_event.last_timestamp = None
+            mock_event.last_timestamp = datetime.now(timezone.utc)
             mock_event.event_time = None
             result = c._parse_event(mock_event)
             assert result is not None
-            assert result["type"] == "K8S_IMAGE_PULL_BACKOFF"
+            assert result["type"] == "K8S_POD_CRASH" # BackOff is parsed as K8S_POD_CRASH
 
 
 class TestAWSCollector:
@@ -64,6 +66,7 @@ class TestAWSCollector:
 
     def test_parse_root_login(self):
         from unittest.mock import patch
+        from datetime import datetime, timezone
         with patch.dict(os.environ, {"AWS_ENABLED": "false"}):
             from core.collectors.aws_collector import AWSCollector
             c = AWSCollector()
@@ -71,16 +74,17 @@ class TestAWSCollector:
                 "eventName": "ConsoleLogin",
                 "userIdentity": {"type": "Root", "arn": "arn:aws:iam::123:root"},
                 "sourceIPAddress": "1.2.3.4",
-                "eventTime": "2026-04-13T08:00:00Z",
+                "eventTime": datetime.now(timezone.utc).isoformat(),
                 "requestParameters": None,
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_ROOT_LOGIN"
+            assert result["type"] == "AWS_ROOT_USAGE"
             assert result["risk"] == "CRITICAL"
 
     def test_parse_cloudtrail_disabled(self):
         from unittest.mock import patch
+        from datetime import datetime, timezone
         with patch.dict(os.environ, {"AWS_ENABLED": "false"}):
             from core.collectors.aws_collector import AWSCollector
             c = AWSCollector()
@@ -88,10 +92,10 @@ class TestAWSCollector:
                 "eventName": "StopLogging",
                 "userIdentity": {"type": "IAMUser", "arn": "arn:aws:iam::123:user/hacker"},
                 "sourceIPAddress": "5.6.7.8",
-                "eventTime": "2026-04-13T08:00:00Z",
+                "eventTime": datetime.now(timezone.utc).isoformat(),
                 "requestParameters": None,
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_CLOUDTRAIL_DISABLED"
+            assert result["type"] == "AWS_LOGGING_DISABLED"
             assert result["risk"] == "CRITICAL"

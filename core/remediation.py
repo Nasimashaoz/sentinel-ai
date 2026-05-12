@@ -16,6 +16,7 @@ Dry run (default): AUTO_REMEDIATE=false  (logs actions without executing)
 import asyncio
 import logging
 import os
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -73,10 +74,33 @@ REMEDIATION_PLAYBOOK = {
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Validate a dynamically built command against allowed templates."""
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            cmd_template = playbook.get("command")
+            if not cmd_template:
+                continue
+
+            # Build a regex from the template
+            # E.g. "fail2ban-client set sshd banip {source_ip}"
+            # -> "^fail2ban\-client\ set\ sshd\ banip\ [a-zA-Z0-9_.-]+$"
+            parts = re.split(r'\{[^\}]+\}', cmd_template)
+            pattern_str = ""
+            for i, part in enumerate(parts):
+                pattern_str += re.escape(part)
+                if i < len(parts) - 1:
+                    pattern_str += r'[a-zA-Z0-9_.-]+'
+
+            pattern_str = "^" + pattern_str + "$"
+            if re.match(pattern_str, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -111,7 +135,14 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
-        if self.dry_run:
+        if not self._is_safe_command(cmd):
+            result = {
+                "action": "skipped",
+                "reason": "Command rejected by safety whitelist",
+                "command": cmd,
+                "rollback": rollback,
+            }
+        elif self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
             result = await self._execute(cmd, rollback, playbook["description"])

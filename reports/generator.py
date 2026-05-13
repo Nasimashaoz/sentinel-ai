@@ -5,7 +5,7 @@ Produces HTML and JSON incident reports for audit and compliance.
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -28,7 +28,7 @@ class ReportGenerator:
 
     def generate_html_report(self, days: int = 7) -> str:
         incidents = self.load_incidents()
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         recent = [i for i in incidents if self._after(i.get("timestamp", ""), cutoff)]
 
         by_risk = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
@@ -70,7 +70,7 @@ class ReportGenerator:
           .footer {{ margin-top:40px; color:#999; font-size:12px; text-align:center; }}
         </style></head><body>
         <h1>🛡️ Sentinel AI — Security Report</h1>
-        <div class="meta">Period: Last {days} days &nbsp;•&nbsp; Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>
+        <div class="meta">Period: Last {days} days &nbsp;•&nbsp; Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</div>
         <div class="kpi-grid">
           <div class="kpi"><div class="kpi-value" style="color:#2563eb">{len(recent)}</div><div class="kpi-label">Total Incidents</div></div>
           <div class="kpi"><div class="kpi-value" style="color:#dc2626">{by_risk['CRITICAL']}</div><div class="kpi-label">Critical</div></div>
@@ -88,13 +88,13 @@ class ReportGenerator:
 
     def generate_json_report(self, days: int = 7) -> dict:
         incidents = self.load_incidents()
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         recent = [i for i in incidents if self._after(i.get("timestamp", ""), cutoff)]
         by_risk = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
         for i in recent:
             by_risk[i.get("risk", "LOW")] = by_risk.get(i.get("risk", "LOW"), 0) + 1
         return {
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "period_days": days,
             "total_incidents": len(recent),
             "by_risk": by_risk,
@@ -103,13 +103,16 @@ class ReportGenerator:
 
     def save_html_report(self, days: int = 7) -> str:
         html = self.generate_html_report(days)
-        fname = f"report_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.html"
+        fname = f"report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.html"
         path = self.data_dir / fname
         path.write_text(html)
         return str(path)
 
     def _after(self, ts_str: str, cutoff: datetime) -> bool:
         try:
-            return datetime.fromisoformat(ts_str) >= cutoff
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts >= cutoff
         except Exception:
             return False

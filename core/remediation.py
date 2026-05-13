@@ -70,13 +70,31 @@ REMEDIATION_PLAYBOOK = {
 }
 
 
+import re
+
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Validates command against the whitelist playbook."""
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Escape the template, then replace \{param\} with our regex pattern
+            escaped_template = re.escape(template)
+            pattern = re.sub(r'\\\{[a-zA-Z_]+\\\}', r'[a-zA-Z0-9_.-]+', escaped_template)
+
+            if re.fullmatch(pattern, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -97,6 +115,9 @@ class RemediationEngine:
             )
         except KeyError as e:
             return {"action": "none", "reason": f"Missing template variable: {e}"}
+
+        if not self._is_safe_command(cmd):
+            return {"action": "error", "reason": "Command failed safety validation against whitelist playbook"}
 
         rollback = None
         if playbook.get("rollback"):

@@ -70,13 +70,35 @@ REMEDIATION_PLAYBOOK = {
 }
 
 
+import re
+
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = not self.dry_run
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Dynamically validate commands via regex templates."""
+        for p_data in REMEDIATION_PLAYBOOK.values():
+            cmd_template = p_data.get("command")
+            if not cmd_template:
+                continue
+
+            # Escape the static parts of the template
+            regex_str = "^" + re.escape(cmd_template) + "$"
+            # Replace escaped placeholders with our strict character class
+            regex_str = regex_str.replace(r"\{source_ip\}", r"[a-zA-Z0-9_.-]+")
+            regex_str = regex_str.replace(r"\{pid\}", r"[a-zA-Z0-9_.-]+")
+            regex_str = regex_str.replace(r"\{resource\}", r"[a-zA-Z0-9_.-]+")
+            regex_str = regex_str.replace(r"\{namespace\}", r"[a-zA-Z0-9_.-]+")
+
+            if re.match(regex_str, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -111,7 +133,14 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
-        if self.dry_run:
+        if not self._is_safe_command(cmd):
+            result = {
+                "action": "none",
+                "reason": "Command not dynamically validated as safe",
+                "command": cmd,
+                "rollback": rollback,
+            }
+        elif self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
             result = await self._execute(cmd, rollback, playbook["description"])

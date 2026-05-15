@@ -20,6 +20,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 import json
+import re
 
 log = logging.getLogger(__name__)
 
@@ -73,10 +74,30 @@ REMEDIATION_PLAYBOOK = {
 class RemediationEngine:
     def __init__(self):
         self.dry_run = not AUTO_REMEDIATE
+        self.enabled = not self.dry_run
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Strict whitelist safety check against PLAYBOOK templates."""
+        for name, entry in REMEDIATION_PLAYBOOK.items():
+            tmpl = entry.get("command")
+            if not tmpl:
+                continue
+
+            # Convert template format to regex
+            # Escape the static parts, replace {vars} with safe character classes
+            regex = re.escape(tmpl)
+            regex = re.sub(r'\\{source_ip\\}', r'[a-zA-Z0-9_.-]+', regex)
+            regex = re.sub(r'\\{pid\\}', r'[0-9]+', regex)
+            regex = re.sub(r'\\{resource\\}', r'[a-zA-Z0-9_.-]+', regex)
+            regex = re.sub(r'\\{namespace\\}', r'[a-zA-Z0-9_.-]+', regex)
+
+            if re.fullmatch(regex, cmd):
+                return True
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -97,6 +118,9 @@ class RemediationEngine:
             )
         except KeyError as e:
             return {"action": "none", "reason": f"Missing template variable: {e}"}
+
+        if not self._is_safe_command(cmd):
+            return {"action": "none", "reason": "Generated command failed safety checks"}
 
         rollback = None
         if playbook.get("rollback"):

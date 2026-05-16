@@ -70,13 +70,48 @@ REMEDIATION_PLAYBOOK = {
 }
 
 
+import re
+from datetime import timezone
+
 class RemediationEngine:
     def __init__(self):
+        self.enabled = AUTO_REMEDIATE
         self.dry_run = not AUTO_REMEDIATE
         if self.dry_run:
             log.info("🔒 Remediation: DRY RUN mode (set AUTO_REMEDIATE=true to enable)")
         else:
             log.warning("⚠️ Remediation: LIVE mode — will execute commands automatically")
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Strictly validate command against whitelist templates."""
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Convert template to regex. e.g. fail2ban-client set sshd banip {source_ip}
+            # -> fail2ban\-client\ set\ sshd\ banip\ [a-zA-Z0-9_.-]+
+
+            # Split by template variables
+            parts = re.split(r'\{[^}]+\}', template)
+
+            if len(parts) == 1:
+                # No template variables
+                if cmd == template:
+                    return True
+                continue
+
+            # Escape static parts
+            regex_parts = [re.escape(part) for part in parts]
+
+            # Join with strict character class
+            regex = r'[a-zA-Z0-9_.-]+'.join(regex_parts)
+
+            # Must match the whole string strictly
+            if re.match(f'^{regex}$', cmd):
+                return True
+
+        return False
 
     async def handle(self, threat: dict) -> dict:
         """Attempt remediation for a threat. Returns action result."""
@@ -106,6 +141,10 @@ class RemediationEngine:
                 )
             except Exception:
                 pass
+
+        # Validate against whitelist templates to enforce strict safety policy
+        if not self._is_safe_command(cmd):
+            return {"action": "error", "reason": "Command not whitelisted", "command": cmd}
 
         # Safety gate
         safe = playbook.get("safe_for_auto", False)
@@ -156,7 +195,7 @@ class RemediationEngine:
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

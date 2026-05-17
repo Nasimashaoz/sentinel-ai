@@ -98,15 +98,19 @@ class AWSCollector:
         return events
 
     def _parse_event(self, ct_event: dict) -> Optional[dict]:
-        event_name = ct_event.get("EventName", "")
-        username = ct_event.get("Username", "unknown")
-        source_ip = ct_event.get("SourceIPAddress", "unknown")
-        event_time = ct_event.get("EventTime", datetime.now(timezone.utc))
+        event_name = ct_event.get("EventName") or ct_event.get("eventName", "")
+
+        user_identity = ct_event.get("userIdentity", {})
+        username = ct_event.get("Username") or ct_event.get("userName") or user_identity.get("userName", "unknown")
+        user_type = user_identity.get("type", "")
+
+        source_ip = ct_event.get("SourceIPAddress") or ct_event.get("sourceIPAddress", "unknown")
+        event_time = ct_event.get("EventTime") or ct_event.get("eventTime", datetime.now(timezone.utc))
         resources = [r.get("ResourceName", "") for r in ct_event.get("Resources", [])]
         resource_str = ", ".join(resources) if resources else "N/A"
 
         # Root account usage — always CRITICAL
-        if username == "root":
+        if username == "root" or user_type == "Root":
             return {
                 "type": "AWS_ROOT_USAGE",
                 "source_ip": source_ip,

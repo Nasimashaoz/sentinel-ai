@@ -111,7 +111,14 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
-        if self.dry_run:
+        if not self._is_safe_command(cmd):
+            result = {
+                "action": "rejected",
+                "reason": "Command failed whitelist safety validation",
+                "command": cmd,
+                "rollback": rollback,
+            }
+        elif self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
             result = await self._execute(cmd, rollback, playbook["description"])
@@ -154,9 +161,24 @@ class RemediationEngine:
             log.error(f"Remediation execution error: {e}")
             return {"action": "error", "command": cmd, "error": str(e)}
 
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Dynamically validate commands against REMEDIATION_PLAYBOOK templates to prevent injection."""
+        import re
+        for playbook in REMEDIATION_PLAYBOOK.values():
+            if not playbook.get("command"):
+                continue
+            template = playbook["command"]
+            # Escape static parts, replace {variables} with strict regex
+            pattern = re.escape(template)
+            pattern = re.sub(r'\\{[a-zA-Z0-9_]+\\}', r'[a-zA-Z0-9_.-]+', pattern)
+            if re.fullmatch(pattern, cmd):
+                return True
+        return False
+
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
+        from datetime import timezone
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),

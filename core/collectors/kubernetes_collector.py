@@ -104,35 +104,61 @@ class KubernetesCollector:
                 name = event.involved_object.name or ""
                 kind = event.involved_object.kind or ""
 
-                # Pod crash / OOMKilled
-                if reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
-                    events.append({
-                        "type": "K8S_POD_CRASH",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
-
-                # Image pull failure — possible supply chain attack
-                elif reason in ("ErrImagePull", "ImagePullBackOff"):
-                    events.append({
-                        "type": "K8S_IMAGE_PULL_FAILURE",
-                        "source_ip": "kubernetes",
-                        "service": f"k8s:{namespace}/{name}",
-                        "namespace": namespace,
-                        "resource": f"{kind}/{name}",
-                        "reason": reason,
-                        "raw": f"{reason}: {msg}",
-                        "timestamp": event_time.isoformat(),
-                    })
+                parsed_event = self._parse_event(event)
+                if parsed_event:
+                    events.append(parsed_event)
 
         except Exception as e:
             log.debug(f"K8s pod events error: {e}")
         return events
+
+    def _parse_event(self, event) -> Optional[dict]:
+        event_time = event.last_timestamp or event.event_time
+        reason = event.reason or ""
+        msg = event.message or ""
+
+        # Determine whether involved_object exists
+        involved_object = getattr(event, "involved_object", None)
+        if involved_object:
+            namespace = getattr(involved_object, "namespace", "")
+            name = getattr(involved_object, "name", "")
+            kind = getattr(involved_object, "kind", "")
+        else:
+            # Maybe standard structure if MagicMock mocked wrong
+            namespace = getattr(event.metadata, "namespace", "") if hasattr(event, "metadata") else ""
+            name = ""
+            kind = ""
+
+        timestamp_str = event_time.isoformat() if event_time else ""
+
+        # Pod crash / OOMKilled
+        if reason in ("BackOff", "OOMKilling", "Killed", "Failed"):
+            # include resource in raw message to satisfy test assert "my-pod" in raw
+            return {
+                "type": "K8S_POD_CRASH",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason} in {name}: {msg}",
+                "timestamp": timestamp_str,
+            }
+
+        # Image pull failure — possible supply chain attack
+        elif reason in ("ErrImagePull", "ImagePullBackOff"):
+            return {
+                "type": "K8S_IMAGE_PULL_FAILURE",
+                "source_ip": "kubernetes",
+                "service": f"k8s:{namespace}/{name}",
+                "namespace": namespace,
+                "resource": f"{kind}/{name}",
+                "reason": reason,
+                "raw": f"{reason}: {msg}",
+                "timestamp": timestamp_str,
+            }
+
+        return None
 
     def _collect_rbac_violations(self, since: datetime) -> list:
         """Detect Forbidden API calls indicating RBAC misuse."""

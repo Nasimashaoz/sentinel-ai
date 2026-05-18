@@ -111,7 +111,13 @@ class RemediationEngine:
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
 
-        if self.dry_run:
+        if not self._is_safe_command(cmd):
+            result = {
+                "action": "rejected",
+                "reason": "Command failed safety validation against playbook",
+                "command": cmd,
+            }
+        elif self.dry_run:
             result = self._dry_run(cmd, rollback, playbook["description"])
         elif safe and critical_ok:
             result = await self._execute(cmd, rollback, playbook["description"])
@@ -125,6 +131,24 @@ class RemediationEngine:
 
         self._audit(threat, cmd, rollback, result)
         return result
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        import re
+        for key, playbook in REMEDIATION_PLAYBOOK.items():
+            command_template = playbook.get("command")
+            if not command_template:
+                continue
+
+            escaped_template = re.escape(command_template)
+            pattern = escaped_template.replace(r"\{source_ip\}", r"[a-zA-Z0-9_.-]+") \
+                                      .replace(r"\{pid\}", r"[a-zA-Z0-9_.-]+") \
+                                      .replace(r"\{resource\}", r"[a-zA-Z0-9_.-]+") \
+                                      .replace(r"\{namespace\}", r"[a-zA-Z0-9_.-]+")
+
+            if re.fullmatch(pattern, cmd):
+                return True
+
+        return False
 
     def _dry_run(self, cmd: str, rollback: str, description: str) -> dict:
         log.info(f"🔍 DRY RUN — would execute: {cmd}")

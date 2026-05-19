@@ -20,6 +20,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 import json
+import re
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +108,14 @@ class RemediationEngine:
             except Exception:
                 pass
 
+        # Dynamic whitelist validation
+        if not self._is_safe_command(cmd):
+            return {
+                "action": "blocked",
+                "reason": f"Command failed whitelist safety check: {cmd}",
+                "command": cmd,
+            }
+
         # Safety gate
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
@@ -153,6 +162,28 @@ class RemediationEngine:
         except Exception as e:
             log.error(f"Remediation execution error: {e}")
             return {"action": "error", "command": cmd, "error": str(e)}
+
+    def _is_safe_command(self, cmd: str) -> bool:
+        """Validates command against the REMEDIATION_PLAYBOOK templates."""
+        for key, playbook in REMEDIATION_PLAYBOOK.items():
+            template = playbook.get("command")
+            if not template:
+                continue
+
+            # Escape regex characters in the template, but allow for our parameter placeholders
+            regex_str = re.escape(template)
+
+            # Replace escaped parameter placeholders with a strict character class that disallows spaces/injection
+            regex_str = regex_str.replace(re.escape("{source_ip}"), r"[a-zA-Z0-9_.-]+")
+            regex_str = regex_str.replace(re.escape("{pid}"), r"[a-zA-Z0-9_.-]+")
+            regex_str = regex_str.replace(re.escape("{resource}"), r"[a-zA-Z0-9_.-]+")
+            regex_str = regex_str.replace(re.escape("{namespace}"), r"[a-zA-Z0-9_.-]+")
+
+            # Ensure full string match
+            regex = re.compile(f"^{regex_str}$")
+            if regex.match(cmd):
+                return True
+        return False
 
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {

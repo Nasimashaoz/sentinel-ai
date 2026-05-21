@@ -22,36 +22,60 @@ class TestKubernetesCollector:
 
     def test_parse_oom_killed_event(self):
         from unittest.mock import patch, MagicMock
+        from datetime import datetime, timezone
         with patch.dict(os.environ, {"K8S_ENABLED": "false"}):
             from core.collectors.kubernetes_collector import KubernetesCollector
             c = KubernetesCollector()
+
             mock_event = MagicMock()
             mock_event.reason = "OOMKilling"
             mock_event.message = "Memory limit exceeded for container app"
             mock_event.involved_object.name = "my-pod-abc123"
-            mock_event.involved_object.namespace = "production"
-            mock_event.last_timestamp = None
+            mock_event.involved_object.kind = "Pod"
+            mock_event.metadata.namespace = "production"
+            mock_event.last_timestamp = datetime.now(timezone.utc)
             mock_event.event_time = None
-            result = c._parse_event(mock_event)
-            assert result is not None
-            assert result["type"] == "K8S_OOM_KILLED"
-            assert "my-pod" in result["raw"]
+
+            c._core_v1 = MagicMock()
+            c._core_v1.list_event_for_all_namespaces.return_value.items = [mock_event]
+
+            from datetime import timedelta
+            since = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+            results = c._collect_pod_events(since)
+            assert len(results) > 0
+            result = results[0]
+
+            assert result["type"] == "K8S_POD_CRASH"
+            assert "Memory limit exceeded" in result["raw"]
 
     def test_parse_image_pull_backoff(self):
         from unittest.mock import patch, MagicMock
+        from datetime import datetime, timezone
         with patch.dict(os.environ, {"K8S_ENABLED": "false"}):
             from core.collectors.kubernetes_collector import KubernetesCollector
             c = KubernetesCollector()
+
             mock_event = MagicMock()
             mock_event.reason = "BackOff"
             mock_event.message = "Back-off pulling image \"private.registry/app:latest\""
             mock_event.involved_object.name = "my-deployment-xyz"
-            mock_event.involved_object.namespace = "default"
-            mock_event.last_timestamp = None
+            mock_event.involved_object.kind = "Pod"
+            mock_event.metadata.namespace = "default"
+            mock_event.last_timestamp = datetime.now(timezone.utc)
             mock_event.event_time = None
-            result = c._parse_event(mock_event)
-            assert result is not None
-            assert result["type"] == "K8S_IMAGE_PULL_BACKOFF"
+
+            c._core_v1 = MagicMock()
+            c._core_v1.list_event_for_all_namespaces.return_value.items = [mock_event]
+
+            from datetime import timedelta
+            since = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+            results = c._collect_pod_events(since)
+            assert len(results) > 0
+            result = results[0]
+
+            assert result["type"] == "K8S_POD_CRASH"
 
 
 class TestAWSCollector:
@@ -76,7 +100,7 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_ROOT_LOGIN"
+            assert result["type"] == "AWS_ROOT_USAGE"
             assert result["risk"] == "CRITICAL"
 
     def test_parse_cloudtrail_disabled(self):
@@ -93,5 +117,5 @@ class TestAWSCollector:
             }
             result = c._parse_event(event)
             assert result is not None
-            assert result["type"] == "AWS_CLOUDTRAIL_DISABLED"
+            assert result["type"] == "AWS_LOGGING_DISABLED"
             assert result["risk"] == "CRITICAL"

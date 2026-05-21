@@ -17,9 +17,10 @@ import asyncio
 import logging
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import json
+import re
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +108,12 @@ class RemediationEngine:
             except Exception:
                 pass
 
+        if not self._is_safe_command(cmd):
+            return {"action": "none", "reason": f"Command rejected by safety whitelist: {cmd}"}
+
+        if rollback and not self._is_safe_command(rollback):
+            rollback = None
+
         # Safety gate
         safe = playbook.get("safe_for_auto", False)
         critical_ok = AUTO_REMEDIATE_CRITICAL or risk not in ("CRITICAL",)
@@ -154,9 +161,34 @@ class RemediationEngine:
             log.error(f"Remediation execution error: {e}")
             return {"action": "error", "command": cmd, "error": str(e)}
 
+    def _is_safe_command(self, cmd: str) -> bool:
+        if not cmd:
+            return False
+
+        for threat_type, playbook in REMEDIATION_PLAYBOOK.items():
+            for key in ["command", "rollback"]:
+                template = playbook.get(key)
+                if not template:
+                    continue
+
+                # Create a regex from the template
+                # Split template by {parameter}
+                parts = re.split(r'\{[a-zA-Z_]+\}', template)
+
+                # Escape static parts
+                escaped_parts = [re.escape(p) for p in parts]
+
+                # Join with strict parameter regex
+                regex = r'^' + r'[a-zA-Z0-9_.-]+'.join(escaped_parts) + r'$'
+
+                if re.match(regex, cmd):
+                    return True
+
+        return False
+
     def _audit(self, threat: dict, cmd: str, rollback: str, result: dict):
         entry = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "threat_type": threat.get("type"),
             "risk": threat.get("risk"),
             "source_ip": threat.get("source_ip"),
